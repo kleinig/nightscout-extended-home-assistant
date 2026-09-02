@@ -1,35 +1,45 @@
-# Nightscout Home Assistant Integration v0.5.0
+# Nightscout Extended
 
-A HACS-style Home Assistant custom integration for Nightscout.
+A read-only HACS-style Home Assistant integration that extends the official Nightscout integration with advanced AAPS, pump and Nightscout diagnostics.
 
-## v0.5 highlights
+## Why this is a separate integration
 
-- More robust AAPS `enacted` / `suggested` / `requested` parsing
-- Current glucose and delta from Nightscout entries
-- 24-hour/loaded-window glucose statistics
-- Time in range / below range / above range
-- GMI estimate
+Home Assistant already provides an official `nightscout` integration for basic CGM data. This project intentionally uses the separate `nightscout_extended` domain so it can coexist with the official integration.
+
+## Features
+
+- CGM glucose, delta and direction
 - IOB, basal IOB, activity and COB
-- AAPS decision diagnostics
-- Prediction arrays exposed as attributes
-- Pump reservoir, battery, status, profile, firmware and temp basal
-- Last bolus details from both pump status and treatments
-- AAPS phone/uploader information
+- Eventual BG and target BG
+- AAPS algorithm/decision diagnostics
+- Dynamic ISF and sensitivity diagnostics
+- Prediction arrays as AAPS Decision attributes
+- Pump reservoir, battery, status, profile and firmware
+- Temp basal and last bolus
+- AAPS phone/uploader status
 - AAPS and Nightscout versions
-- AAPS configuration diagnostics
-- Warning/critical binary sensors
+- TIR/TBR/TAR/very-high statistics and GMI
+- Configuration/threshold diagnostics
+- Glucose/pump/reservoir/battery warning states
 - Public Nightscout sites supported without an API secret
-- Monitoring/diagnostics only; no dosing or pump-control commands
 
 ## Installation
 
-1. Add the repository to HACS as a custom integration repository.
-2. Install **Nightscout**.
+1. Add this repository to HACS as a custom integration.
+2. Install **Nightscout Extended**.
 3. Restart Home Assistant.
-4. Add **Nightscout** from Settings → Devices & services.
+4. Add **Nightscout Extended** from Settings → Devices & services.
 5. Enter your Nightscout URL.
-6. Leave API secret blank if your site allows public API reads.
+6. Leave API secret blank if your site permits public API reads.
+
+## Existing v0.x users
+
+v0.6 uses a new Home Assistant domain:
+
+`nightscout_extended`
+
+It does not conflict with Home Assistant's official `nightscout` integration. Remove the old custom `nightscout` integration before installing v0.6 if you previously installed this project's older versions.
 
 ## Safety
 
-This integration is read-only monitoring. It does not issue treatment recommendations, change AAPS settings, or control a pump.
+This integration is read-only monitoring and diagnostics. It does not issue dosing recommendations, alter AAPS settings, or control a pump.
