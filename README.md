@@ -32,21 +32,6 @@ invalid responses are reported separately, and the integration supports reconfig
 ### Unit preferences
 The integration Options flow lets you choose mmol/L or mg/dL for preferred glucose sensors and mmol/L/U or mg/dL/U for insulin sensitivity. Insulin-to-carb ratio (IC / Carb Ratio) is always exposed as g/U.
 
+### CAGE / SAGE / IAGE / BAGE
 
-## v0.8.5
-
-- Added CAGE / SAGE / IAGE / BAGE-style age sensors:
-  - Cannula Age
-  - CGM Sensor Age
-  - Insulin Cartridge Age
-  - Pump Battery Age
-- Added timestamp sensors showing the last change event used by each timer.
-- Age timers are calculated from Nightscout treatment events:
-  - Site Change / Cannula Change
-  - Sensor Change / Sensor Start
-  - Insulin Change / Cartridge Change
-  - Pump Battery Change / Battery Change
-- Added AAPS warning and critical thresholds as sensor attributes.
-- Options changes now automatically reload the integration.
-- Fixed handling of `profile.json` when Nightscout returns historical profiles as a list.
-- Improved selection of the newest AAPS devicestatus record.
+Version 0.8.6 listens to the Nightscout Socket.IO dataUpdate/retroUpdate stream and uses the latest valid Site Change, Sensor Change/Sensor Start, Insulin Change, and Pump Battery Change events for device-age sensors.

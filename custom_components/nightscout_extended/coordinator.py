@@ -5,6 +5,8 @@ import asyncio
 import math
 import re
 from typing import Any
+import json
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -219,53 +221,56 @@ def _decision(aaps: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-AGE_EVENT_ALIASES: dict[str, set[str]] = {
-    "cannula": {"site change", "cannula change"},
-    "sensor": {"sensor change", "sensor start"},
-    "insulin": {"insulin change", "cartridge change", "insulin cartridge change"},
-    "battery": {"pump battery change", "battery change"},
+EVENT_TYPE_MAP = {
+    "site change": "cannula",
+    "sensor change": "sensor",
+    "sensor start": "sensor",
+    "insulin change": "insulin",
+    "pump battery change": "battery",
+    "battery change": "battery",
 }
 
 
 def _normalise_event_type(value: Any) -> str:
-    """Normalise Nightscout treatment event names for matching."""
-    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+    return " ".join(str(value or "").strip().casefold().split())
 
 
-def _latest_age_events(
-    treatments: list[dict[str, Any]],
-) -> dict[str, datetime | None]:
-    """Return the most recent Nightscout treatment timestamp for each age timer."""
-    latest: dict[str, datetime | None] = {
-        "cannula": None,
-        "sensor": None,
-        "insulin": None,
-        "battery": None,
-    }
-
-    for treatment in treatments:
-        if not isinstance(treatment, dict):
+def _event_datetime(event: dict[str, Any]) -> datetime | None:
+    for key in ("created_at", "timestamp", "date"):
+        value = event.get(key)
+        if value is None:
             continue
-        if treatment.get("isValid") is False:
-            continue
+        parsed = _parse_dt(value)
+        if parsed is not None:
+            return parsed
+    return None
 
-        event_type = _normalise_event_type(treatment.get("eventType"))
-        if not event_type:
-            continue
 
-        created = _parse_dt(
-            treatment.get("created_at") or treatment.get("timestamp") or treatment.get("date")
-        )
-        if created is None:
-            continue
+def _extract_change_events(payload: Any) -> dict[str, dict[str, Any]]:
+    """Extract latest valid device-change events from a Socket.IO payload."""
+    found: dict[str, dict[str, Any]] = {}
 
-        for timer_name, aliases in AGE_EVENT_ALIASES.items():
-            if event_type in aliases and (
-                latest[timer_name] is None or created > latest[timer_name]
-            ):
-                latest[timer_name] = created
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            if value.get("eventType") is not None:
+                event_type = EVENT_TYPE_MAP.get(_normalise_event_type(value.get("eventType")))
+                if event_type and value.get("isValid") is not False:
+                    when = _event_datetime(value)
+                    if when is not None:
+                        previous = found.get(event_type)
+                        if previous is None or when > previous["timestamp"]:
+                            found[event_type] = {
+                                "timestamp": when,
+                                "event_type": str(value.get("eventType")),
+                            }
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
 
-    return latest
+    walk(payload)
+    return found
 
 
 class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -280,6 +285,10 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.glucose_unit = entry.options.get("glucose_unit", "mmol/L")
         self.isf_unit = entry.options.get("isf_unit", "mmol/L/U")
         self.session = async_get_clientsession(hass)
+        self._change_events: dict[str, dict[str, Any]] = {}
+        self._socket_task: asyncio.Task | None = None
+        self._socket_connected = False
+        self._socket_last_error: str | None = None
 
         super().__init__(
             hass,
@@ -287,6 +296,102 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name=NAME,
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
+
+    async def async_start_socketio(self) -> None:
+        """Start the Nightscout Socket.IO listener."""
+        if self._socket_task is None or self._socket_task.done():
+            self._socket_task = self.hass.async_create_task(
+                self._socketio_loop(), name="nightscout_extended_socketio"
+            )
+
+    async def async_stop_socketio(self) -> None:
+        """Stop the Nightscout Socket.IO listener."""
+        if self._socket_task is not None:
+            self._socket_task.cancel()
+            try:
+                await self._socket_task
+            except asyncio.CancelledError:
+                pass
+            self._socket_task = None
+        self._socket_connected = False
+
+    def _apply_socket_events(self) -> None:
+        if not self.data:
+            return
+        now = datetime.now(timezone.utc)
+        mapping = {
+            "cannula": ("cannula_age", "last_cannula_change"),
+            "sensor": ("sensor_age", "last_sensor_change"),
+            "insulin": ("insulin_age", "last_insulin_change"),
+            "battery": ("battery_age", "last_battery_change"),
+        }
+        for kind, (age_key, timestamp_key) in mapping.items():
+            event = self._change_events.get(kind)
+            if not event:
+                continue
+            timestamp = event["timestamp"]
+            self.data[timestamp_key] = timestamp
+            self.data[age_key] = max(0.0, (now - timestamp).total_seconds() / 3600)
+            self.data[f"{age_key}_event_type"] = event["event_type"]
+
+    async def _socketio_loop(self) -> None:
+        """Listen for Nightscout Engine.IO/Socket.IO dataUpdate messages."""
+        parsed = urlparse(self.base_url)
+        scheme = "wss" if parsed.scheme == "https" else "ws"
+        path = parsed.path.rstrip("/") + "/socket.io/"
+        if not path.startswith("/"):
+            path = "/" + path
+        url = f"{scheme}://{parsed.netloc}{path}"
+
+        while True:
+            try:
+                async with self.session.ws_connect(
+                    url,
+                    params={"EIO": "4", "transport": "websocket"},
+                    heartbeat=20,
+                    timeout=None,
+                    headers={"User-Agent": "Home Assistant Nightscout Extended"},
+                ) as ws:
+                    self._socket_connected = True
+                    self._socket_last_error = None
+                    async for msg in ws:
+                        if msg.type == aiohttp.WSMsgType.TEXT:
+                            packet = msg.data
+                            if packet == "2":
+                                await ws.send_str("3")
+                                continue
+                            if packet.startswith("2") and not packet.startswith("20"):
+                                await ws.send_str("3")
+                                continue
+                            if packet.startswith("42"):
+                                try:
+                                    event_packet = json.loads(packet[2:])
+                                except (TypeError, ValueError):
+                                    continue
+                                if (
+                                    isinstance(event_packet, list)
+                                    and len(event_packet) >= 2
+                                    and event_packet[0] in {"dataUpdate", "retroUpdate"}
+                                ):
+                                    events = _extract_change_events(event_packet[1])
+                                    changed = False
+                                    for kind, event in events.items():
+                                        old = self._change_events.get(kind)
+                                        if old is None or event["timestamp"] > old["timestamp"]:
+                                            self._change_events[kind] = event
+                                            changed = True
+                                    if changed:
+                                        self._apply_socket_events()
+                                        self.async_set_updated_data(self.data)
+                        elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                            break
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:  # reconnect loop; REST remains independent
+                self._socket_last_error = str(err)
+            finally:
+                self._socket_connected = False
+            await asyncio.sleep(30)
 
     async def _get_json(
         self, path: str, params: dict[str, Any] | None = None
@@ -374,12 +479,6 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if isinstance(d, dict)
                 and isinstance(d.get("openaps"), dict)
             ]
-        aaps_records.sort(
-            key=lambda d: _parse_dt(
-                d.get("created_at") or d.get("date") or d.get("mills")
-            ) or datetime.min.replace(tzinfo=timezone.utc),
-            reverse=True,
-        )
         latest_aaps = aaps_records[0] if aaps_records else {}
 
         # Empty configuration objects are present on ordinary AAPS snapshots.
@@ -788,49 +887,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or decision.get("smb") is not None
         )
 
-        # AAPS/Nightscout age timers are derived from the corresponding
-        # careportal treatment events. The event timestamps are retained so
-        # the user can see exactly what each timer is based on.
-        age_events = _latest_age_events(treatments)
-        age_now = datetime.now(timezone.utc)
-        age_hours = {
-            name: (
-                (age_now - event_time).total_seconds() / 3600.0
-                if event_time is not None
-                else None
-            )
-            for name, event_time in age_events.items()
-        }
-
-        # AAPS status-light thresholds are stored in hours.
-        age_thresholds = {
-            "cannula_warning": _num(
-                overview_cfg.get("statuslights_cage_warning")
-            ),
-            "cannula_critical": _num(
-                overview_cfg.get("statuslights_cage_critical")
-            ),
-            "insulin_warning": _num(
-                overview_cfg.get("statuslights_iage_warning")
-            ),
-            "insulin_critical": _num(
-                overview_cfg.get("statuslights_iage_critical")
-            ),
-            "sensor_warning": _num(
-                overview_cfg.get("statuslights_sage_warning")
-            ),
-            "sensor_critical": _num(
-                overview_cfg.get("statuslights_sage_critical")
-            ),
-            "battery_warning": _num(
-                overview_cfg.get("statuslights_bage_warning")
-            ),
-            "battery_critical": _num(
-                overview_cfg.get("statuslights_bage_critical")
-            ),
-        }
-
-        return {
+        data = {
             "status": status,
             "devicestatus": latest_aaps,
             "configuration": aaps_config,
@@ -962,23 +1019,23 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             ),
 
-            # CAGE / SAGE / IAGE / BAGE timers and their AAPS thresholds.
-            "cannula_age": age_hours["cannula"],
-            "cannula_last_change": age_events["cannula"],
-            "cannula_age_warning": age_thresholds["cannula_warning"],
-            "cannula_age_critical": age_thresholds["cannula_critical"],
-            "sensor_age": age_hours["sensor"],
-            "sensor_last_change": age_events["sensor"],
-            "sensor_age_warning": age_thresholds["sensor_warning"],
-            "sensor_age_critical": age_thresholds["sensor_critical"],
-            "insulin_age": age_hours["insulin"],
-            "insulin_last_change": age_events["insulin"],
-            "insulin_age_warning": age_thresholds["insulin_warning"],
-            "insulin_age_critical": age_thresholds["insulin_critical"],
-            "battery_age": age_hours["battery"],
-            "battery_last_change": age_events["battery"],
-            "battery_age_warning": age_thresholds["battery_warning"],
-            "battery_age_critical": age_thresholds["battery_critical"],
+            # CAGE / SAGE / IAGE / BAGE from the Socket.IO event stream.
+            "cannula_age": self.data.get("cannula_age") if self.data else None,
+            "sensor_age": self.data.get("sensor_age") if self.data else None,
+            "insulin_age": self.data.get("insulin_age") if self.data else None,
+            "battery_age": self.data.get("battery_age") if self.data else None,
+            "last_cannula_change": self.data.get("last_cannula_change") if self.data else None,
+            "last_sensor_change": self.data.get("last_sensor_change") if self.data else None,
+            "last_insulin_change": self.data.get("last_insulin_change") if self.data else None,
+            "last_battery_change": self.data.get("last_battery_change") if self.data else None,
+            "cage_warning": _num(overview_cfg.get("statuslights_cage_warning")),
+            "cage_critical": _num(overview_cfg.get("statuslights_cage_critical")),
+            "sage_warning": _num(overview_cfg.get("statuslights_sage_warning")),
+            "sage_critical": _num(overview_cfg.get("statuslights_sage_critical")),
+            "iage_warning": _num(overview_cfg.get("statuslights_iage_warning")),
+            "iage_critical": _num(overview_cfg.get("statuslights_iage_critical")),
+            "bage_warning": _num(overview_cfg.get("statuslights_bage_warning")),
+            "bage_critical": _num(overview_cfg.get("statuslights_bage_critical")),
 
             # Nightscout/statistics.
             "nightscout_version": _text(
@@ -994,3 +1051,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 else None
             ),
         }
+        self.data = data
+        self._apply_socket_events()
+        return data
+

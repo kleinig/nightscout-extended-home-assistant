@@ -21,6 +21,15 @@ DEVICE = DeviceInfo(
 
 
 SENSORS = [
+    # Device age sensors populated from the Nightscout Socket.IO event stream.
+    ("cannula_age", "Cannula Age", "h", None, EntityCategory.DIAGNOSTIC),
+    ("sensor_age", "CGM Sensor Age", "h", None, EntityCategory.DIAGNOSTIC),
+    ("insulin_age", "Insulin Cartridge Age", "h", None, EntityCategory.DIAGNOSTIC),
+    ("battery_age", "Pump Battery Age", "h", None, EntityCategory.DIAGNOSTIC),
+    ("last_cannula_change", "Last Cannula Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
+    ("last_sensor_change", "Last Sensor Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
+    ("last_insulin_change", "Last Insulin Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
+    ("last_battery_change", "Last Pump Battery Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     # Preferred display sensors follow Options > Display preferences.
     ("preferred_bg", "Blood Glucose", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
     ("preferred_delta", "BG Delta", None, None, EntityCategory.DIAGNOSTIC),
@@ -81,15 +90,6 @@ SENSORS = [
     ("tar", "Time Above Range", "%", None, EntityCategory.DIAGNOSTIC),
     ("very_high", "Time Very High", "%", None, EntityCategory.DIAGNOSTIC),
     ("gmi", "Glucose Management Indicator", "%", None, EntityCategory.DIAGNOSTIC),
-    # Age / status-light timers
-    ("cannula_age", "Cannula Age", "h", None, EntityCategory.DIAGNOSTIC),
-    ("sensor_age", "CGM Sensor Age", "h", None, EntityCategory.DIAGNOSTIC),
-    ("insulin_age", "Insulin Cartridge Age", "h", None, EntityCategory.DIAGNOSTIC),
-    ("battery_age", "Pump Battery Age", "h", None, EntityCategory.DIAGNOSTIC),
-    ("cannula_last_change", "Last Cannula Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
-    ("sensor_last_change", "Last CGM Sensor Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
-    ("insulin_last_change", "Last Insulin Cartridge Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
-    ("battery_last_change", "Last Pump Battery Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     # Pump
     ("reservoir", "Pump Reservoir", "U", None, None),
     ("pump_battery", "Pump Battery", "%", None, None),
@@ -235,32 +235,36 @@ class NightscoutExtendedSensor(SensorEntity):
             attrs["prediction_series_available"] = list((data.get("decision", {}).get("pred_bgs") or {}).keys())
         if self.key == "aaps_device":
             attrs["last_update"] = data.get("entry_time")
-
-        age_info = {
-            "cannula_age": ("cannula_age_warning", "cannula_age_critical", "cannula_last_change"),
-            "sensor_age": ("sensor_age_warning", "sensor_age_critical", "sensor_last_change"),
-            "insulin_age": ("insulin_age_warning", "insulin_age_critical", "insulin_last_change"),
-            "battery_age": ("battery_age_warning", "battery_age_critical", "battery_last_change"),
+        age_meta = {
+            "cannula_age": ("cage_warning", "cage_critical"),
+            "sensor_age": ("sage_warning", "sage_critical"),
+            "insulin_age": ("iage_warning", "iage_critical"),
+            "battery_age": ("bage_warning", "bage_critical"),
         }
-        if self.key in age_info:
-            warning_key, critical_key, timestamp_key = age_info[self.key]
+        if self.key in age_meta:
+            warning_key, critical_key = age_meta[self.key]
+            age = data.get(self.key)
+            warning = data.get(warning_key)
+            critical = data.get(critical_key)
             attrs.update({
-                "warning_hours": data.get(warning_key),
-                "critical_hours": data.get(critical_key),
-                "last_change": data.get(timestamp_key),
-                "source": "Nightscout treatment event",
+                "warning_hours": warning,
+                "critical_hours": critical,
             })
-
-        timestamp_age_map = {
-            "cannula_last_change": "cannula_age",
-            "sensor_last_change": "sensor_age",
-            "insulin_last_change": "insulin_age",
-            "battery_last_change": "battery_age",
-        }
-        if self.key in timestamp_age_map:
-            attrs["age_hours"] = data.get(timestamp_age_map[self.key])
-            attrs["source"] = "Nightscout treatment event"
-
+            if age is None:
+                attrs["status"] = "unknown"
+            elif critical is not None and age >= critical:
+                attrs["status"] = "critical"
+            elif warning is not None and age >= warning:
+                attrs["status"] = "warning"
+            else:
+                attrs["status"] = "ok"
+            attrs["last_change"] = data.get({
+                "cannula_age": "last_cannula_change",
+                "sensor_age": "last_sensor_change",
+                "insulin_age": "last_insulin_change",
+                "battery_age": "last_battery_change",
+            }[self.key])
+            attrs["event_type"] = data.get(f"{self.key}_event_type")
         return attrs or None
 
     async def async_added_to_hass(self):

@@ -6,8 +6,6 @@ from typing import Any
 import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.config_entries import OptionsFlowWithReload
-from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
@@ -195,13 +193,11 @@ class NightscoutExtendedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
     @staticmethod
-    @staticmethod
-    @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
         return NightscoutExtendedOptionsFlow()
 
 
-class NightscoutExtendedOptionsFlow(OptionsFlowWithReload):
+class NightscoutExtendedOptionsFlow(config_entries.OptionsFlowWithReload):
     """Manage display unit preferences."""
 
     async def async_step_init(self, user_input=None):
