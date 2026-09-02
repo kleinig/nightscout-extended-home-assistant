@@ -1,0 +1,11 @@
+{
+  "domain": "nightscout",
+  "name": "Nightscout",
+  "version": "0.3.0",
+  "documentation": "https://github.com/example/nightscout-home-assistant",
+  "issue_tracker": "https://github.com/example/nightscout-home-assistant/issues",
+  "codeowners": [],
+  "config_flow": true,
+  "iot_class": "cloud_polling",
+  "requirements": []
+}

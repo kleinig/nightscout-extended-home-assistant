@@ -1,0 +1,6 @@
+DOMAIN = "nightscout"
+CONF_URL = "url"
+CONF_SCAN_INTERVAL = "scan_interval"
+CONF_HISTORY_DAYS = "history_days"
+DEFAULT_SCAN_INTERVAL = 60
+DEFAULT_HISTORY_DAYS = 7
