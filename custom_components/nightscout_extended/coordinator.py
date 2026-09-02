@@ -38,10 +38,12 @@ def _text(value: Any) -> str | None:
     return value or None
 
 
-def _parse_dt(value: Any) -> datetime | None:
+def _parse_dt(value: Any, tz=None) -> datetime | None:
     if value is None:
         return None
-    if isinstance(value, (int, float)):
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, (int, float)):
         try:
             v = float(value)
             if v > 10_000_000_000:
@@ -49,47 +51,78 @@ def _parse_dt(value: Any) -> datetime | None:
             return datetime.fromtimestamp(v, tz=timezone.utc)
         except (ValueError, OSError, OverflowError):
             return None
-
-    value = str(value).strip()
-    if not value:
-        return None
-
-    for candidate in (value, value.replace("Z", "+00:00")):
-        try:
-            dt = datetime.fromisoformat(candidate)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-        except ValueError:
-            pass
-
-    for fmt in (
-        "%d/%m/%y %I:%M %p",
-        "%m/%d/%y %I:%M %p",
-        "%d/%m/%Y %I:%M %p",
-        "%m/%d/%Y %I:%M %p",
-    ):
-        try:
-            return datetime.strptime(value, fmt).replace(tzinfo=timezone.utc)
-        except ValueError:
-            pass
-
-    return None
+    else:
+        raw = str(value).strip()
+        if not raw:
+            return None
+        dt = None
+        for candidate in (raw, raw.replace("Z", "+00:00")):
+            try:
+                dt = datetime.fromisoformat(candidate)
+                break
+            except ValueError:
+                pass
+        if dt is None:
+            for fmt in (
+                "%d/%m/%y %I:%M %p", "%m/%d/%y %I:%M %p",
+                "%d/%m/%Y %I:%M %p", "%m/%d/%Y %I:%M %p",
+                "%d/%m/%y %H:%M", "%m/%d/%y %H:%M",
+                "%d/%m/%Y %H:%M", "%m/%d/%Y %H:%M",
+            ):
+                try:
+                    dt = datetime.strptime(raw, fmt)
+                    break
+                except ValueError:
+                    pass
+        if dt is None:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=tz or timezone.utc)
+    return dt
 
 
 def _mgdl(value: Any) -> float | None:
     value = _num(value)
     if value is None:
         return None
-    return value * 18.0 if abs(value) < 20 else value
+    return value
 
 
 def _mmol(value: Any) -> float | None:
     value = _num(value)
-    if value is None:
-        return None
-    return value / 18.0 if abs(value) >= 20 else value
+    return value / 18.0 if value is not None else None
 
+
+def _schedule_value(value: Any, now_local: datetime) -> float | None:
+    """Get the currently active value from a Nightscout timed schedule."""
+    if isinstance(value, (int, float, str)):
+        return _num(value)
+    if not isinstance(value, list):
+        return None
+
+    parsed: list[tuple[int, float]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        val = _num(item.get("value"))
+        raw_time = item.get("time") or item.get("start")
+        if val is None or not isinstance(raw_time, str):
+            continue
+        match = re.match(r"^(\d{1,2}):(\d{2})", raw_time.strip())
+        if not match:
+            continue
+        hour, minute = int(match.group(1)), int(match.group(2))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            parsed.append((hour * 60 + minute, val))
+
+    if not parsed:
+        return None
+
+    now_minutes = now_local.hour * 60 + now_local.minute
+    eligible = [item for item in parsed if item[0] <= now_minutes]
+    if eligible:
+        return max(eligible, key=lambda item: item[0])[1]
+    return max(parsed, key=lambda item: item[0])[1]
 
 def _walk_for_key(obj: Any, keys: set[str]) -> Any:
     if isinstance(obj, dict):
@@ -110,7 +143,7 @@ def _walk_for_key(obj: Any, keys: set[str]) -> Any:
 def _first_number_from_text(text: str | None, label: str) -> float | None:
     if not text:
         return None
-    pattern = rf"{re.escape(label)}\s*[:=]\s*(-?\d+(?:\.\d+)?)"
+    pattern = rf"(?i)\\b{re.escape(label)}\\b\\s*(?:[:=]\\s*)?(-?\\d+(?:\\.\\d+)?)"
     match = re.search(pattern, text, re.IGNORECASE)
     return _num(match.group(1)) if match else None
 
@@ -237,14 +270,22 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         latest_entry = entries_sorted[-1] if entries_sorted else {}
         previous_entry = entries_sorted[-2] if len(entries_sorted) > 1 else {}
 
-        latest_aaps = next(
-            (d for d in devicestatus if isinstance(d, dict) and d.get("device") and (
+        aaps_records = [
+            d for d in devicestatus
+            if isinstance(d, dict)
+            and (
                 str(d.get("app", "")).upper() == "AAPS"
-                or "openaps" in d
-                or "pump" in d
-            )),
-            {},
-        )
+                or "aaps" in str(d.get("device", "")).lower()
+            )
+            and isinstance(d.get("openaps"), dict)
+        ]
+        if not aaps_records:
+            aaps_records = [
+                d for d in devicestatus
+                if isinstance(d, dict)
+                and isinstance(d.get("openaps"), dict)
+            ]
+        latest_aaps = aaps_records[0] if aaps_records else {}
 
         config_record = next(
             (
@@ -281,27 +322,40 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         direction = _text(latest_entry.get("direction"))
         entry_time = _parse_dt(latest_entry.get("dateString") or latest_entry.get("created_at"))
 
-        # Profile.
+        # Profile: Nightscout stores CR/sensitivity/targets as timed arrays.
         default_profile = _text(profile.get("defaultProfile"))
         profiles = profile.get("store", {}) if isinstance(profile.get("store"), dict) else {}
         active_profile = profiles.get(default_profile, {}) if default_profile else {}
         if not isinstance(active_profile, dict):
             active_profile = {}
 
-        profile_sens_raw = _num(active_profile.get("sens"))
-        profile_sens = profile_sens_raw * 18.0 if profile_sens_raw is not None and abs(profile_sens_raw) < 20 else profile_sens_raw
-        carb_ratio = _num(active_profile.get("carbratio"))
+        timezone_name = _text(active_profile.get("timezone")) or "UTC"
+        try:
+            from zoneinfo import ZoneInfo
+            profile_tz = ZoneInfo(timezone_name)
+        except Exception:
+            profile_tz = timezone.utc
+        now_local = datetime.now(profile_tz)
+
+        profile_sens_raw = _schedule_value(active_profile.get("sens"), now_local)
+        # Nightscout profile sens is mmol/L/U in the supplied profile JSON.
+        profile_sens = profile_sens_raw * 18.0 if profile_sens_raw is not None else None
+
+        # IC / carb ratio is g/U. Keep that native unit; do not invert it.
+        carb_ratio = _schedule_value(active_profile.get("carbratio"), now_local)
         dia = _num(active_profile.get("dia"))
 
-        target_low = _mmol(
+        target_low = _schedule_value(
             active_profile.get("target_low")
             if active_profile.get("target_low") is not None
-            else active_profile.get("target")
+            else active_profile.get("target"),
+            now_local,
         )
-        target_high = _mmol(
+        target_high = _schedule_value(
             active_profile.get("target_high")
             if active_profile.get("target_high") is not None
-            else active_profile.get("target")
+            else active_profile.get("target"),
+            now_local,
         )
 
         # Prediction arrays. AAPS supplies several distinct prediction series.
@@ -340,8 +394,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Nightscout status thresholds.
         status_settings = status.get("settings", {}) if isinstance(status, dict) else {}
         thresholds = status_settings.get("thresholds", {}) if isinstance(status_settings, dict) else {}
-        low_mark = _mmol(overview_cfg.get("low_mark"))
-        high_mark = _mmol(overview_cfg.get("high_mark"))
+        low_mark = _num(overview_cfg.get("low_mark"))
+        high_mark = _num(overview_cfg.get("high_mark"))
         if low_mark is None:
             low_mark = _mmol(thresholds.get("bgLow", 70))
         if high_mark is None:
@@ -530,10 +584,10 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "absorption_cutoff": absorption_cutoff,
             "min_carb_impact": min_carb_impact,
             "dyn_isf_adjust": dyn_isf_adjust,
-            "reservoir_warning": _num(overview_cfg.get("statuslights_res_warning", overview_cfg.get("res_warning"))),
-            "reservoir_critical": _num(overview_cfg.get("statuslights_res_critical", overview_cfg.get("res_critical"))),
-            "pump_battery_warning": _num(overview_cfg.get("statuslights_bat_warning", overview_cfg.get("bat_warning"))),
-            "pump_battery_critical": _num(overview_cfg.get("statuslights_bat_critical", overview_cfg.get("bat_critical"))),
+            "reservoir_warning": _num(overview_cfg.get("res_warning", overview_cfg.get("statuslights_res_warning"))),
+            "reservoir_critical": _num(overview_cfg.get("res_critical", overview_cfg.get("statuslights_res_critical"))),
+            "pump_battery_warning": _num(overview_cfg.get("bat_warning", overview_cfg.get("statuslights_bat_warning"))),
+            "pump_battery_critical": _num(overview_cfg.get("bat_critical", overview_cfg.get("statuslights_bat_critical"))),
             "nightscout_version": _text(status.get("version") if isinstance(status, dict) else None),
             "entry_count": len(entries_sorted),
             "treatment_count": len(treatments),
