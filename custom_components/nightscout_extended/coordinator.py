@@ -346,8 +346,8 @@ class NightscoutCoordinator(DataUpdateCoordinator):
             "phone_charging": bool(latest_aaps.get("isCharging")),
             "aaps_device": latest_aaps.get("device"),
             "aaps_version": (
-                _text(configuration.get("version"))
-                or _text(configuration.get("aaps_version"))
+                _text(cfg.get("version"))
+                or _text(cfg.get("aaps_version"))
                 or _text(latest_aaps.get("version"))
                 or _walk(latest_aaps, {"version"})
             ),
