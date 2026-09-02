@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.const import PERCENTAGE, UnitOfTime, UnitOfVolume, CONCENTRATION_MILLIGRAMS_PER_DECILITER
+from homeassistant.const import PERCENTAGE, UnitOfTime, UnitOfVolume
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.const import UnitOfTemperature

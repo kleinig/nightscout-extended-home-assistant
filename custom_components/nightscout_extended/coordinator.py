@@ -337,7 +337,12 @@ class NightscoutCoordinator(DataUpdateCoordinator):
             "phone_battery": _num(latest_aaps.get("uploaderBattery")),
             "phone_charging": bool(latest_aaps.get("isCharging")),
             "aaps_device": latest_aaps.get("device"),
-            "aaps_version": _walk(latest_aaps, {"version"}),
+            "aaps_version": (
+                _str(configuration.get("version"))
+                or _str(configuration.get("aaps_version"))
+                or _str(latest_aaps.get("version"))
+                or _walk(latest_aaps, {"version"})
+            ),
             "pump_battery": _num((pump.get("battery") or {}).get("percent")),
             "pump_reservoir": _num(pump.get("reservoir")),
             "pump_status": pump_status,
@@ -352,7 +357,7 @@ class NightscoutCoordinator(DataUpdateCoordinator):
             "base_basal": _num(extended.get("BaseBasalRate")),
             "profile_basal": basal_profile,
             "profile_cr": cr_profile,
-            "profile_sens": sens_profile,
+            "profile_sens": (sens_profile * 18.0 if sens_profile is not None and sens_profile < 20 else sens_profile),
             "profile_target_low": target_low,
             "profile_target_high": target_high,
             "iob": _num(iob.get("iob", decision.get("IOB"))),
@@ -415,8 +420,8 @@ class NightscoutCoordinator(DataUpdateCoordinator):
             # AAPS configuration, explicitly from devicestatus.configuration.
             "aaps_low_mark": _num(overview.get("low_mark")),
             "aaps_high_mark": _num(overview.get("high_mark")),
-            "aaps_max_bolus": _num(safety.get("treatmentssafety_maxbolus")),
-            "aaps_max_carbs": _num(safety.get("treatmentssafety_maxcarbs")),
+            "aaps_max_bolus": _num(safety.get("max_bolus", safety.get("treatmentssafety_maxbolus"))),
+            "aaps_max_carbs": _num(safety.get("max_carbs", safety.get("treatmentssafety_maxcarbs"))),
             "autosens_min": _num(sensitivity_cfg.get("autosens_min")),
             "autosens_max": _num(sensitivity_cfg.get("autosens_max")),
             "carb_absorption_cutoff": _num(sensitivity_cfg.get("absorption_cutoff")),
