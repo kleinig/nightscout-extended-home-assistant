@@ -218,11 +218,11 @@ class NightscoutCoordinator(DataUpdateCoordinator):
     def _normalize(self, status, devicestatus, entries, treatments, profile):
         latest_aaps = self._latest_aaps(devicestatus)
         latest_entry = self._latest_entry(entries)
-        cfg = self._configuration(devicestatus)
-        aps = cfg.get("apsConfiguration", {}) if isinstance(cfg, dict) else {}
-        overview = cfg.get("overviewConfiguration", {}) if isinstance(cfg, dict) else {}
-        safety = cfg.get("safetyConfiguration", {}) if isinstance(cfg, dict) else {}
-        sensitivity_cfg = cfg.get("sensitivityConfiguration", {}) if isinstance(cfg, dict) else {}
+        aaps_config = self._configuration(devicestatus)
+        aps = aaps_config.get("apsConfiguration", {}) if isinstance(aaps_config, dict) else {}
+        overview = aaps_config.get("overviewConfiguration", {}) if isinstance(aaps_config, dict) else {}
+        safety = aaps_config.get("safetyConfiguration", {}) if isinstance(aaps_config, dict) else {}
+        sensitivity_cfg = aaps_config.get("sensitivityConfiguration", {}) if isinstance(aaps_config, dict) else {}
 
         openaps = latest_aaps.get("openaps", {}) or {}
         suggested = openaps.get("suggested", {}) or {}
@@ -334,7 +334,7 @@ class NightscoutCoordinator(DataUpdateCoordinator):
             "treatments": treatments or [],
             "profile": profile or {},
             "active_profile": active_profile,
-            "configuration": cfg,
+            "configuration": aaps_config,
             "bg": bg,
             "bg_mmol": bg / 18.0 if bg is not None else None,
             "direction": direction,
@@ -346,8 +346,8 @@ class NightscoutCoordinator(DataUpdateCoordinator):
             "phone_charging": bool(latest_aaps.get("isCharging")),
             "aaps_device": latest_aaps.get("device"),
             "aaps_version": (
-                _text(cfg.get("version"))
-                or _text(cfg.get("aaps_version"))
+                _text(aaps_config.get("version"))
+                or _text(aaps_config.get("aaps_version"))
                 or _text(latest_aaps.get("version"))
                 or _walk(latest_aaps, {"version"})
             ),
