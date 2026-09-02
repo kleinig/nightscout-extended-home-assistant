@@ -1,6 +1,6 @@
 DOMAIN = "nightscout_extended"
 NAME = "Nightscout Extended"
-VERSION = "0.8.3"
+VERSION = "0.8.4"
 
 CONF_URL = "url"
 CONF_API_KEY = "api_key"
@@ -10,3 +10,8 @@ DEFAULT_ENTRIES_COUNT = 288
 DEFAULT_SCAN_INTERVAL = 60
 
 PLATFORMS = ["sensor", "binary_sensor"]
+
+CONF_GLUCOSE_UNIT = "glucose_unit"
+CONF_ISF_UNIT = "isf_unit"
+DEFAULT_GLUCOSE_UNIT = "mmol/L"
+DEFAULT_ISF_UNIT = "mmol/L/U"

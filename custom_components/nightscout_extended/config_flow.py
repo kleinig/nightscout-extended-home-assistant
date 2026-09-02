@@ -190,3 +190,34 @@ class NightscoutExtendedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=self._schema(current),
             errors=errors,
         )
+
+
+    @staticmethod
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+        return NightscoutExtendedOptionsFlow()
+
+
+class NightscoutExtendedOptionsFlow(config_entries.OptionsFlow):
+    """Manage display unit preferences."""
+
+    async def async_step_init(self, user_input=None):
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_GLUCOSE_UNIT,
+                    default=self.config_entry.options.get(
+                        CONF_GLUCOSE_UNIT, DEFAULT_GLUCOSE_UNIT
+                    ),
+                ): vol.In(["mmol/L", "mg/dL"]),
+                vol.Required(
+                    CONF_ISF_UNIT,
+                    default=self.config_entry.options.get(
+                        CONF_ISF_UNIT, DEFAULT_ISF_UNIT
+                    ),
+                ): vol.In(["mmol/L/U", "mg/dL/U"]),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)

@@ -187,10 +187,11 @@ def _decision(aaps: dict[str, Any]) -> dict[str, Any]:
     requested = requested if isinstance(requested, dict) else {}
 
     def requested_number(name: str) -> float | None:
-        value = _num(source.get(name))
-        if value is not None:
+        value = _num(requested.get(name))
+        if value is not None and value >= 0:
             return value
-        return _num(requested.get(name))
+        value = _num(source.get(name))
+        return value if value is None or value >= 0 else None
 
     pred = source.get("predBGs")
     pred = pred if isinstance(pred, dict) else {}
@@ -227,6 +228,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.entries_count = int(
             entry.data.get(CONF_ENTRIES_COUNT, DEFAULT_ENTRIES_COUNT)
         )
+        self.glucose_unit = entry.options.get("glucose_unit", "mmol/L")
+        self.isf_unit = entry.options.get("isf_unit", "mmol/L/U")
         self.session = async_get_clientsession(hass)
 
         super().__init__(
@@ -271,7 +274,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             status, devicestatus, entries, treatments, profile = await asyncio.gather(
                 self._get_json("/api/v1/status.json"),
-                self._get_json("/api/v1/devicestatus.json", {"count": 10}),
+                self._get_json("/api/v1/devicestatus.json", {"count": 50}),
                 self._get_json(
                     "/api/v1/entries.json", {"count": self.entries_count}
                 ),
@@ -393,17 +396,30 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             latest_entry.get("dateString") or latest_entry.get("created_at")
         )
 
-        # Profile values can be timed schedules. The profile's timezone tells
-        # us which schedule entry is active now.
-        default_profile = _text(profile.get("defaultProfile"))
-        profiles = (
-            profile.get("store", {})
-            if isinstance(profile.get("store"), dict)
-            else {}
+        # profile.json may contain one profile object or a list of historical
+        # profile objects. Use the newest document and its defaultProfile.
+        profile_docs = profile if isinstance(profile, list) else [profile]
+        profile_docs = [x for x in profile_docs if isinstance(x, dict)]
+        profile_docs.sort(
+            key=lambda x: _parse_dt(
+                x.get("startDate") or x.get("created_at") or x.get("date")
+            ) or datetime.min.replace(tzinfo=timezone.utc)
         )
+        profile_doc = profile_docs[-1] if profile_docs else {}
+
+        default_profile = _text(profile_doc.get("defaultProfile"))
+        profiles = profile_doc.get("store", {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+
         active_profile = (
             profiles.get(default_profile, {}) if default_profile else {}
         )
+        if not isinstance(active_profile, dict) and default_profile:
+            for profile_name, profile_value in profiles.items():
+                if str(profile_name).strip().lower() == default_profile.lower():
+                    active_profile = profile_value
+                    break
         if not isinstance(active_profile, dict):
             active_profile = {}
 
@@ -690,6 +706,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         min_carb_impact = _num(
             sensitivity_cfg.get("min_5m_carbimpact")
         )
+        if min_carb_impact is None:
+            min_carb_impact = _num(sensitivity_cfg.get("min5m_carbimpact"))
         dyn_isf_adjust = _num(aps_cfg.get("DynISFAdjust"))
 
         reservoir = _num(pump.get("reservoir"))
@@ -730,6 +748,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "delta": delta,
             "direction": direction,
             "average_bg": avg_bg,
+            "average_bg_mgdl": avg_bg,
+            "average_bg_mmol": _mgdl_to_mmol(avg_bg),
             "bg_sd": sd,
             "bg_cv": cv,
             "tir": tir,
@@ -849,6 +869,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "nightscout_version": _text(
                 status.get("version") if isinstance(status, dict) else None
             ),
+            "glucose_unit": self.glucose_unit,
+            "isf_unit": self.isf_unit,
             "entry_count": len(entries_sorted),
             "treatment_count": len(treatments),
             "glucose_age": (

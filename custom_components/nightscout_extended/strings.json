@@ -29,5 +29,17 @@
     "abort": {
       "already_configured": "This Nightscout instance is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Display preferences",
+        "description": "Choose the preferred glucose and insulin-sensitivity units. Insulin-to-carb ratio (IC / Carb Ratio) is always g/U.",
+        "data": {
+          "glucose_unit": "Preferred glucose unit",
+          "isf_unit": "Preferred insulin sensitivity unit"
+        }
+      }
+    }
   }
 }

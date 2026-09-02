@@ -1,7 +1,7 @@
 {
   "domain": "nightscout_extended",
   "name": "Nightscout Extended",
-  "version": "0.8.2.1",
+  "version": "0.8.4",
   "documentation": "https://github.com/example/nightscout-extended",
   "requirements": [],
   "codeowners": [],
