@@ -1,47 +1,41 @@
-# Nightscout Home Assistant
+# Nightscout Home Assistant Integration
 
-A broad Home Assistant integration for Nightscout, with optional AAPS/OpenAPS/pump data when those fields are present.
+A HACS-style custom Home Assistant integration for a Nightscout site.
 
-## Data sources
+## Features
 
-The integration reads:
-- `/api/v1/status.json`
-- `/api/v1/devicestatus.json`
-- `/api/v1/entries.json`
-- `/api/v1/treatments.json`
-- `/api/v1/profile.json` (optional)
-
-## Entity groups
-
-### Glucose
-BG mg/dL and mmol/L, delta, direction, average, SD, CV, data age, eventual BG, target BG and prediction curves.
-
-### Therapy
-IOB, basal IOB, activity, COB, ISF, dynamic sensitivity, sensitivity ratio, carb sensitivity, insulin required and carb impact.
-
-### AAPS/OpenAPS
-Algorithm, dynamic ISF, SMB, dosing decision/reason, requested temp basal, delivery state and prediction arrays.
-
-### Pump
-Reservoir, battery, basal rate, temp basal, last bolus, profile, status and firmware.
-
-### Uploader
-Phone battery, charging, device and communication age.
-
-### Configuration
-Pump/APS type, AAPS version, units, safety limits, glucose marks, reservoir/battery warning thresholds and sensitivity settings.
-
-### Statistics
-History-window insulin, bolus and carb totals plus average daily insulin/carbs and glucose statistics.
-
-## Safety
-
-Monitoring only. This integration does not control a pump, issue dosing commands or make treatment recommendations.
+- Nightscout status/version
+- Current glucose in mg/dL and mmol/L
+- Delta, direction, average, SD and CV
+- Glucose data age
+- Eventual BG, target BG and AAPS prediction diagnostics
+- IOB, basal IOB, insulin activity and COB
+- AAPS decision diagnostics (read-only)
+- Dynamic ISF and sensitivity diagnostics
+- Pump reservoir, battery, status, profile and firmware
+- Temp basal and last bolus information
+- AAPS uploader battery/charging/device
+- Daily treatment totals
+- AAPS configuration/threshold diagnostics
+- Binary sensors for glucose state, closed loop, pump/uploader state and warnings
 
 ## Installation
 
-Copy `custom_components/nightscout` into your Home Assistant `config/custom_components/` directory, or add the repository to HACS as a custom integration. Restart Home Assistant and add **Nightscout** under Settings → Devices & services.
+### HACS custom repository
 
-Configure the base URL, e.g. `https://your-nightscout.example.com`.
+1. Add this repository as a custom integration repository in HACS.
+2. Select **Integration**.
+3. Install **Nightscout**.
+4. Restart Home Assistant.
+5. Go to **Settings → Devices & services → Add integration**.
+6. Search for **Nightscout**.
 
-The integration is designed to tolerate missing optional Nightscout/AAPS fields rather than fabricating values.
+The integration supports Nightscout sites that do not require an API secret.
+
+## Important
+
+This integration is for monitoring and diagnostics. It does not send dosing commands to AAPS or a pump and does not provide treatment recommendations.
+
+## Data
+
+The integration reads Nightscout API endpoints including status, devicestatus, entries, treatments and profile.
