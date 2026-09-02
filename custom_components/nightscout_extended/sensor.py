@@ -38,24 +38,24 @@ SENSORS = [
     ("preferred_average_bg", "Average BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("preferred_isf", "Current ISF", None, None, None),
     # Core glucose
-    ("bg_mgdl", "Blood Glucose (mg/dL)", "mg/dL", None, None),
+    ("bg_mgdl", "Blood Glucose (display)", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
     ("bg_mmol", "Blood Glucose (mmol/L)", "mmol/L", None, None),
-    ("delta_mgdl", "BG Delta (mg/dL)", "mg/dL", None, None),
+    ("delta_mgdl", "BG Delta (display)", None, None, None),
     ("delta_mmol", "BG Delta (mmol/L)", "mmol/L", None, None),
     ("direction", "BG Direction", None, None, None),
     ("glucose_age", "Glucose Age", "s", None, EntityCategory.DIAGNOSTIC),
     # AAPS / insulin
     ("iob", "Insulin on Board", "U", None, None),
     ("cob", "Carbs on Board", "g", None, None),
-    ("eventual_bg", "Eventual BG (mg/dL)", "mg/dL", None, None),
+    ("eventual_bg", "Eventual BG (display)", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
     ("eventual_bg_mmol", "Eventual BG (mmol/L)", "mmol/L", None, None),
-    ("target_bg", "Target BG (mg/dL)", "mg/dL", None, None),
+    ("target_bg", "Target BG (display)", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
     ("target_bg_mmol", "Target BG (mmol/L)", "mmol/L", None, None),
     ("insulin_required", "Insulin Required", "U", None, None),
     ("sensitivity_ratio", "Sensitivity Ratio", None, None, None),
-    ("current_isf", "Current ISF (mg/dL/U)", "mg/dL/U", None, None),
+    ("current_isf", "Current ISF", None, None, None),
     ("carb_ratio", "Carb Ratio", "g/U", None, None),
-    ("profile_sens", "Profile Sensitivity (mg/dL/U)", "mg/dL/U", None, None),
+    ("profile_sens", "Profile Sensitivity", None, None, EntityCategory.DIAGNOSTIC),
     ("profile_name", "Active Profile", None, None, None),
     ("dia", "Insulin DIA", "h", None, None),
     ("profile_target_low", "Profile Target Low (mmol/L)", "mmol/L", None, EntityCategory.DIAGNOSTIC),
@@ -66,24 +66,24 @@ SENSORS = [
     ("requested_duration", "Requested Temp Basal Duration", "min", None, EntityCategory.DIAGNOSTIC),
     ("smb_amount", "SMB Amount", "U", None, EntityCategory.DIAGNOSTIC),
     # Predictions / diagnostics
-    ("average_pred", "Average Predicted BG (mg/dL)", "mg/dL", None, EntityCategory.DIAGNOSTIC),
-    ("minimum_pred", "Minimum Predicted BG (mg/dL)", "mg/dL", None, EntityCategory.DIAGNOSTIC),
-    ("min_iob_pred", "Minimum IOB Predicted BG (mg/dL)", "mg/dL", None, EntityCategory.DIAGNOSTIC),
-    ("min_guard", "Minimum Guard BG (mg/dL)", "mg/dL", None, EntityCategory.DIAGNOSTIC),
-    ("min_uam", "Minimum UAM Predicted BG (mg/dL)", "mg/dL", None, EntityCategory.DIAGNOSTIC),
-    ("naive_eventual", "Naive Eventual BG (mg/dL)", "mg/dL", None, EntityCategory.DIAGNOSTIC),
-    ("bg_undershoot", "BG Undershoot", "mg/dL", None, EntityCategory.DIAGNOSTIC),
-    ("carb_impact", "Carb Impact", "mg/dL", None, EntityCategory.DIAGNOSTIC),
+    ("average_pred", "Average Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
+    ("minimum_pred", "Minimum Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
+    ("min_iob_pred", "Minimum IOB Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
+    ("min_guard", "Minimum Guard BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
+    ("min_uam", "Minimum UAM Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
+    ("naive_eventual", "Naive Eventual BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
+    ("bg_undershoot", "BG Undershoot", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
+    ("carb_impact", "Carb Impact", None, None, EntityCategory.DIAGNOSTIC),
     ("carb_impact_duration", "Carb Impact Duration", "min", None, EntityCategory.DIAGNOSTIC),
-    ("uam_impact", "UAM Impact", "mg/dL", None, EntityCategory.DIAGNOSTIC),
+    ("uam_impact", "UAM Impact", None, None, EntityCategory.DIAGNOSTIC),
     ("uam_duration", "UAM Duration", "min", None, EntityCategory.DIAGNOSTIC),
     ("carbs_required", "Carbs Required", "g", None, EntityCategory.DIAGNOSTIC),
     ("zero_temp_duration", "Zero Temp Duration", "min", None, EntityCategory.DIAGNOSTIC),
-    ("zero_temp_effect", "Zero Temp Effect", "mg/dL", None, EntityCategory.DIAGNOSTIC),
+    ("zero_temp_effect", "Zero Temp Effect", None, None, EntityCategory.DIAGNOSTIC),
     # Statistics
-    ("average_bg_mgdl", "Average BG (mg/dL)", "mg/dL", None, EntityCategory.DIAGNOSTIC),
+    ("average_bg_mgdl", "Average BG (display)", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("average_bg_mmol", "Average BG (mmol/L)", "mmol/L", None, EntityCategory.DIAGNOSTIC),
-    ("bg_sd", "BG Standard Deviation", "mg/dL", None, EntityCategory.DIAGNOSTIC),
+    ("bg_sd", "BG Standard Deviation", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("bg_cv", "BG Coefficient of Variation", "%", None, EntityCategory.DIAGNOSTIC),
     ("tir", "Time in Range", "%", None, EntityCategory.DIAGNOSTIC),
     ("tbr", "Time Below Range", "%", None, EntityCategory.DIAGNOSTIC),
@@ -115,7 +115,7 @@ SENSORS = [
     ("autosens_min", "Autosens Minimum", None, None, EntityCategory.DIAGNOSTIC),
     ("autosens_max", "Autosens Maximum", None, None, EntityCategory.DIAGNOSTIC),
     ("absorption_cutoff", "Carb Absorption Cutoff", "h", None, EntityCategory.DIAGNOSTIC),
-    ("min_carb_impact", "Minimum Carb Impact", "mg/dL", None, EntityCategory.DIAGNOSTIC),
+    ("min_carb_impact", "Minimum Carb Impact", None, None, EntityCategory.DIAGNOSTIC),
     ("dyn_isf_adjust", "Dynamic ISF Adjustment", None, None, EntityCategory.DIAGNOSTIC),
     ("reservoir_warning", "Reservoir Warning", "U", None, EntityCategory.DIAGNOSTIC),
     ("reservoir_critical", "Reservoir Critical", "U", None, EntityCategory.DIAGNOSTIC),
@@ -130,53 +130,83 @@ def _value(data: dict[str, Any], key: str) -> Any:
     glucose_unit = data.get("glucose_unit", "mmol/L")
     isf_unit = data.get("isf_unit", "mmol/L/U")
 
-    if key == "preferred_bg":
-        value = data.get("bg")
-        return value / 18 if value is not None and glucose_unit == "mmol/L" else value
-    if key == "preferred_delta":
-        value = data.get("delta")
-        return value / 18 if value is not None and glucose_unit == "mmol/L" else value
-    if key == "preferred_eventual_bg":
-        value = data.get("eventual_bg")
-        return value / 18 if value is not None and glucose_unit == "mmol/L" else value
-    if key == "preferred_target_bg":
-        value = data.get("target_bg")
-        return value / 18 if value is not None and glucose_unit == "mmol/L" else value
-    if key == "preferred_average_bg":
-        value = data.get("average_bg")
-        return value / 18 if value is not None and glucose_unit == "mmol/L" else value
-    if key == "preferred_isf":
-        value = data.get("variable_sens")
-        return value / 18 if value is not None and isf_unit == "mmol/L/U" else value
+    def glucose(value):
+        if value is None:
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        return value / 18 if glucose_unit == "mmol/L" else value
 
-    if key == "bg_mgdl":
-        return data.get("bg")
+    def isf(value):
+        if value is None:
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        return value / 18 if isf_unit == "mmol/L/U" else value
+
+    # Preferred entities.
+    if key == "preferred_bg":
+        return glucose(data.get("bg"))
+    if key == "preferred_delta":
+        return glucose(data.get("delta"))
+    if key == "preferred_eventual_bg":
+        return glucose(data.get("eventual_bg"))
+    if key == "preferred_target_bg":
+        return glucose(data.get("target_bg"))
+    if key == "preferred_average_bg":
+        return glucose(data.get("average_bg"))
+    if key == "preferred_isf":
+        return isf(data.get("variable_sens"))
+
+    # Dynamic glucose-display entities.
+    if key in {
+        "bg_mgdl", "delta_mgdl", "eventual_bg", "target_bg",
+        "average_bg_mgdl", "average_pred", "minimum_pred", "min_iob_pred",
+        "min_guard", "min_uam", "naive_eventual", "bg_undershoot",
+        "carb_impact", "uam_impact", "zero_temp_effect", "bg_sd",
+        "min_carb_impact",
+    }:
+        source = {
+            "bg_mgdl": "bg",
+            "delta_mgdl": "delta",
+            "eventual_bg": "eventual_bg",
+            "target_bg": "target_bg",
+            "average_bg_mgdl": "average_bg",
+            "average_pred": "average_pred",
+            "minimum_pred": "minimum_pred",
+            "min_iob_pred": "min_iob_pred",
+            "min_guard": "min_guard",
+            "min_uam": "min_uam",
+            "naive_eventual": "naive_eventual",
+            "bg_undershoot": "bg_undershoot",
+            "carb_impact": "carb_impact",
+            "uam_impact": "uam_impact",
+            "zero_temp_effect": "zero_temp_effect",
+            "bg_sd": "bg_sd",
+            "min_carb_impact": "min_carb_impact",
+        }[key]
+        return glucose(data.get(source))
+
+    # Fixed mmol/L reference entities.
     if key == "bg_mmol":
-        v = data.get("bg")
-        return v / 18 if v is not None else None
-    if key == "delta_mgdl":
-        return data.get("delta")
+        return glucose(data.get("bg")) if data.get("bg") is not None else None
     if key == "delta_mmol":
-        v = data.get("delta")
-        return v / 18 if v is not None else None
-    if key == "current_isf":
-        value = data.get("variable_sens")
-        return value if isf_unit == "mg/dL/U" else (value / 18 if value is not None else None)
-    if key == "eventual_bg":
-        return data.get("eventual_bg")
+        return glucose(data.get("delta")) if data.get("delta") is not None else None
     if key == "eventual_bg_mmol":
-        v = data.get("eventual_bg")
-        return v / 18 if v is not None else None
-    if key == "target_bg":
-        return data.get("target_bg")
+        return glucose(data.get("eventual_bg")) if data.get("eventual_bg") is not None else None
     if key == "target_bg_mmol":
-        v = data.get("target_bg")
-        return v / 18 if v is not None else None
-    if key == "average_bg_mgdl":
-        return data.get("average_bg")
+        return glucose(data.get("target_bg")) if data.get("target_bg") is not None else None
     if key == "average_bg_mmol":
-        value = data.get("average_bg")
-        return value / 18 if value is not None else None
+        return glucose(data.get("average_bg")) if data.get("average_bg") is not None else None
+
+    # Dynamic ISF entities.
+    if key in {"current_isf", "profile_sens"}:
+        return isf(data.get("variable_sens" if key == "current_isf" else "profile_sens"))
+
     if key in {"profile_target_low", "profile_target_high", "profile_name", "dia"}:
         return data.get(key)
     if key == "phone_battery":
@@ -192,26 +222,28 @@ class NightscoutExtendedSensor(SensorEntity):
     def __init__(self, coordinator: NightscoutExtendedCoordinator, key: str, name: str, unit, device_class, category):
         self.coordinator = coordinator
         self.key = key
-        preferred_names = {
-            "preferred_bg": "Blood Glucose",
-            "preferred_delta": "BG Delta",
-            "preferred_eventual_bg": "Eventual BG",
-            "preferred_target_bg": "Target BG",
-            "preferred_average_bg": "Average BG",
-            "preferred_isf": "Current ISF",
-        }
-        self._attr_name = preferred_names.get(key, name)
+        self._attr_name = name
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
-        if key in {"preferred_bg", "preferred_delta", "preferred_eventual_bg",
-                   "preferred_target_bg", "preferred_average_bg"}:
+
+        if key in {
+            "preferred_bg", "preferred_delta", "preferred_eventual_bg",
+            "preferred_target_bg", "preferred_average_bg",
+            "bg_mgdl", "delta_mgdl", "eventual_bg", "target_bg",
+            "average_bg_mgdl", "average_pred", "minimum_pred", "min_iob_pred",
+            "min_guard", "min_uam", "naive_eventual", "bg_undershoot",
+            "carb_impact", "uam_impact", "zero_temp_effect", "bg_sd",
+            "min_carb_impact",
+        }:
             self._attr_native_unit_of_measurement = coordinator.glucose_unit
         elif key in {"preferred_isf", "current_isf", "profile_sens"}:
             self._attr_native_unit_of_measurement = coordinator.isf_unit
         else:
             self._attr_native_unit_of_measurement = unit
+
         self._attr_device_class = device_class
         self._attr_entity_category = category
         self._attr_device_info = DEVICE
+
 
     @property
     def native_value(self):
