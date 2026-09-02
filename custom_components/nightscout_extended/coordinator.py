@@ -219,6 +219,55 @@ def _decision(aaps: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+AGE_EVENT_ALIASES: dict[str, set[str]] = {
+    "cannula": {"site change", "cannula change"},
+    "sensor": {"sensor change", "sensor start"},
+    "insulin": {"insulin change", "cartridge change", "insulin cartridge change"},
+    "battery": {"pump battery change", "battery change"},
+}
+
+
+def _normalise_event_type(value: Any) -> str:
+    """Normalise Nightscout treatment event names for matching."""
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _latest_age_events(
+    treatments: list[dict[str, Any]],
+) -> dict[str, datetime | None]:
+    """Return the most recent Nightscout treatment timestamp for each age timer."""
+    latest: dict[str, datetime | None] = {
+        "cannula": None,
+        "sensor": None,
+        "insulin": None,
+        "battery": None,
+    }
+
+    for treatment in treatments:
+        if not isinstance(treatment, dict):
+            continue
+        if treatment.get("isValid") is False:
+            continue
+
+        event_type = _normalise_event_type(treatment.get("eventType"))
+        if not event_type:
+            continue
+
+        created = _parse_dt(
+            treatment.get("created_at") or treatment.get("timestamp") or treatment.get("date")
+        )
+        if created is None:
+            continue
+
+        for timer_name, aliases in AGE_EVENT_ALIASES.items():
+            if event_type in aliases and (
+                latest[timer_name] is None or created > latest[timer_name]
+            ):
+                latest[timer_name] = created
+
+    return latest
+
+
 class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry) -> None:
         self.hass = hass
@@ -294,7 +343,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             devicestatus = []
         if not isinstance(treatments, list):
             treatments = []
-        if not isinstance(profile, dict):
+        if not isinstance(profile, (dict, list)):
             profile = {}
 
         entries_sorted = sorted(
@@ -325,6 +374,12 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if isinstance(d, dict)
                 and isinstance(d.get("openaps"), dict)
             ]
+        aaps_records.sort(
+            key=lambda d: _parse_dt(
+                d.get("created_at") or d.get("date") or d.get("mills")
+            ) or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
         latest_aaps = aaps_records[0] if aaps_records else {}
 
         # Empty configuration objects are present on ordinary AAPS snapshots.
@@ -733,6 +788,48 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or decision.get("smb") is not None
         )
 
+        # AAPS/Nightscout age timers are derived from the corresponding
+        # careportal treatment events. The event timestamps are retained so
+        # the user can see exactly what each timer is based on.
+        age_events = _latest_age_events(treatments)
+        age_now = datetime.now(timezone.utc)
+        age_hours = {
+            name: (
+                (age_now - event_time).total_seconds() / 3600.0
+                if event_time is not None
+                else None
+            )
+            for name, event_time in age_events.items()
+        }
+
+        # AAPS status-light thresholds are stored in hours.
+        age_thresholds = {
+            "cannula_warning": _num(
+                overview_cfg.get("statuslights_cage_warning")
+            ),
+            "cannula_critical": _num(
+                overview_cfg.get("statuslights_cage_critical")
+            ),
+            "insulin_warning": _num(
+                overview_cfg.get("statuslights_iage_warning")
+            ),
+            "insulin_critical": _num(
+                overview_cfg.get("statuslights_iage_critical")
+            ),
+            "sensor_warning": _num(
+                overview_cfg.get("statuslights_sage_warning")
+            ),
+            "sensor_critical": _num(
+                overview_cfg.get("statuslights_sage_critical")
+            ),
+            "battery_warning": _num(
+                overview_cfg.get("statuslights_bage_warning")
+            ),
+            "battery_critical": _num(
+                overview_cfg.get("statuslights_bage_critical")
+            ),
+        }
+
         return {
             "status": status,
             "devicestatus": latest_aaps,
@@ -864,6 +961,24 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     overview_cfg.get("statuslights_bat_critical"),
                 )
             ),
+
+            # CAGE / SAGE / IAGE / BAGE timers and their AAPS thresholds.
+            "cannula_age": age_hours["cannula"],
+            "cannula_last_change": age_events["cannula"],
+            "cannula_age_warning": age_thresholds["cannula_warning"],
+            "cannula_age_critical": age_thresholds["cannula_critical"],
+            "sensor_age": age_hours["sensor"],
+            "sensor_last_change": age_events["sensor"],
+            "sensor_age_warning": age_thresholds["sensor_warning"],
+            "sensor_age_critical": age_thresholds["sensor_critical"],
+            "insulin_age": age_hours["insulin"],
+            "insulin_last_change": age_events["insulin"],
+            "insulin_age_warning": age_thresholds["insulin_warning"],
+            "insulin_age_critical": age_thresholds["insulin_critical"],
+            "battery_age": age_hours["battery"],
+            "battery_last_change": age_events["battery"],
+            "battery_age_warning": age_thresholds["battery_warning"],
+            "battery_age_critical": age_thresholds["battery_critical"],
 
             # Nightscout/statistics.
             "nightscout_version": _text(

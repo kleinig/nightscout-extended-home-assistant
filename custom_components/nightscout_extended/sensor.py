@@ -81,6 +81,15 @@ SENSORS = [
     ("tar", "Time Above Range", "%", None, EntityCategory.DIAGNOSTIC),
     ("very_high", "Time Very High", "%", None, EntityCategory.DIAGNOSTIC),
     ("gmi", "Glucose Management Indicator", "%", None, EntityCategory.DIAGNOSTIC),
+    # Age / status-light timers
+    ("cannula_age", "Cannula Age", "h", None, EntityCategory.DIAGNOSTIC),
+    ("sensor_age", "CGM Sensor Age", "h", None, EntityCategory.DIAGNOSTIC),
+    ("insulin_age", "Insulin Cartridge Age", "h", None, EntityCategory.DIAGNOSTIC),
+    ("battery_age", "Pump Battery Age", "h", None, EntityCategory.DIAGNOSTIC),
+    ("cannula_last_change", "Last Cannula Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
+    ("sensor_last_change", "Last CGM Sensor Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
+    ("insulin_last_change", "Last Insulin Cartridge Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
+    ("battery_last_change", "Last Pump Battery Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     # Pump
     ("reservoir", "Pump Reservoir", "U", None, None),
     ("pump_battery", "Pump Battery", "%", None, None),
@@ -226,6 +235,32 @@ class NightscoutExtendedSensor(SensorEntity):
             attrs["prediction_series_available"] = list((data.get("decision", {}).get("pred_bgs") or {}).keys())
         if self.key == "aaps_device":
             attrs["last_update"] = data.get("entry_time")
+
+        age_info = {
+            "cannula_age": ("cannula_age_warning", "cannula_age_critical", "cannula_last_change"),
+            "sensor_age": ("sensor_age_warning", "sensor_age_critical", "sensor_last_change"),
+            "insulin_age": ("insulin_age_warning", "insulin_age_critical", "insulin_last_change"),
+            "battery_age": ("battery_age_warning", "battery_age_critical", "battery_last_change"),
+        }
+        if self.key in age_info:
+            warning_key, critical_key, timestamp_key = age_info[self.key]
+            attrs.update({
+                "warning_hours": data.get(warning_key),
+                "critical_hours": data.get(critical_key),
+                "last_change": data.get(timestamp_key),
+                "source": "Nightscout treatment event",
+            })
+
+        timestamp_age_map = {
+            "cannula_last_change": "cannula_age",
+            "sensor_last_change": "sensor_age",
+            "insulin_last_change": "insulin_age",
+            "battery_last_change": "battery_age",
+        }
+        if self.key in timestamp_age_map:
+            attrs["age_hours"] = data.get(timestamp_age_map[self.key])
+            attrs["source"] = "Nightscout treatment event"
+
         return attrs or None
 
     async def async_added_to_hass(self):

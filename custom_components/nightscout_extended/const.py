@@ -1,6 +1,6 @@
 DOMAIN = "nightscout_extended"
 NAME = "Nightscout Extended"
-VERSION = "0.8.4"
+VERSION = "0.8.5"
 
 CONF_URL = "url"
 CONF_API_KEY = "api_key"
