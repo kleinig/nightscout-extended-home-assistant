@@ -3,7 +3,7 @@
 Home Assistant custom integration for read-only monitoring of Nightscout data, including glucose, AAPS status, pump status, treatment statistics, predictions, profile data and configuration.
 
 ## Version
-0.8.0
+0.8.1
 
 ## Nightscout endpoints
 - `/api/v1/status.json`
