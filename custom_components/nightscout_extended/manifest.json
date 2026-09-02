@@ -1,0 +1,10 @@
+{
+  "domain": "nightscout_extended",
+  "name": "Nightscout Extended",
+  "version": "0.7.0",
+  "documentation": "https://github.com/example/nightscout-extended",
+  "requirements": [],
+  "codeowners": [],
+  "config_flow": true,
+  "iot_class": "cloud_polling"
+}

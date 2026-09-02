@@ -1,45 +1,29 @@
-# Nightscout Extended
+# Nightscout Extended v0.7.0
 
-A read-only HACS-style Home Assistant integration that extends the official Nightscout integration with advanced AAPS, pump and Nightscout diagnostics.
+Read-only Home Assistant custom integration for Nightscout data.
 
-## Why this is a separate integration
+## Endpoint model
 
-Home Assistant already provides an official `nightscout` integration for basic CGM data. This project intentionally uses the separate `nightscout_extended` domain so it can coexist with the official integration.
+- `/api/v1/status.json` — Nightscout version, units, thresholds and server settings
+- `/api/v1/devicestatus.json` — AAPS/device status, pump, phone, predictions and AAPS configuration
+- `/api/v1/entries.json` — glucose readings and history
+- `/api/v1/treatments.json` — bolus/temp-basal/treatment history
+- `/api/v1/profile.json` — active Nightscout profile, basal, sensitivity, carb ratio and targets
 
-## Features
+## Authentication
 
-- CGM glucose, delta and direction
-- IOB, basal IOB, activity and COB
-- Eventual BG and target BG
-- AAPS algorithm/decision diagnostics
-- Dynamic ISF and sensitivity diagnostics
-- Prediction arrays as AAPS Decision attributes
-- Pump reservoir, battery, status, profile and firmware
-- Temp basal and last bolus
-- AAPS phone/uploader status
-- AAPS and Nightscout versions
-- TIR/TBR/TAR/very-high statistics and GMI
-- Configuration/threshold diagnostics
-- Glucose/pump/reservoir/battery warning states
-- Public Nightscout sites supported without an API secret
+The API key is optional. When supplied, it is sent as the `API-SECRET` header. Leave it blank if the Nightscout server permits readable unauthenticated API requests.
 
-## Installation
+## v0.7 highlights
 
-1. Add this repository to HACS as a custom integration.
-2. Install **Nightscout Extended**.
-3. Restart Home Assistant.
-4. Add **Nightscout Extended** from Settings → Devices & services.
-5. Enter your Nightscout URL.
-6. Leave API secret blank if your site permits public API reads.
+- Separate parsing for each Nightscout endpoint.
+- Optional API key in the config flow.
+- Configurable history sizes.
+- Correct parsing of the nested AAPS configuration object.
+- Structured prediction parsing with targeted AAPS diagnostic parsing.
+- Profile data sourced from `profile.json`.
+- Treatment history used for bolus/treatment diagnostics.
+- Pump and AAPS data remain read-only.
+- Domain is `nightscout_extended`, so it can coexist with Home Assistant's official `nightscout` integration.
 
-## Existing v0.x users
-
-v0.6 uses a new Home Assistant domain:
-
-`nightscout_extended`
-
-It does not conflict with Home Assistant's official `nightscout` integration. Remove the old custom `nightscout` integration before installing v0.6 if you previously installed this project's older versions.
-
-## Safety
-
-This integration is read-only monitoring and diagnostics. It does not issue dosing recommendations, alter AAPS settings, or control a pump.
+This integration does not control a pump or make treatment recommendations.
