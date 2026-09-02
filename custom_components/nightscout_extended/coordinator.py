@@ -379,6 +379,11 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Pump status / timestamps.
         pump_clock = _parse_dt(pump.get("clock"))
+        pump_status_raw = pump.get("status")
+        if isinstance(pump_status_raw, dict):
+            pump_status = _text(pump_status_raw.get("status"))
+        else:
+            pump_status = _text(pump_status_raw)
         temp_rate = _num(pump_ext.get("TempBasalAbsoluteRate"))
         temp_remaining = _num(pump_ext.get("TempBasalRemaining"))
         temp_start = _parse_dt(pump_ext.get("TempBasalStart"))
@@ -467,11 +472,13 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "charging": charging,
             "profile_name": default_profile,
             "profile_sens": profile_sens,
+            "profile_name": default_profile,
+            "dia": dia,
             "carb_ratio": carb_ratio,
             "dia": dia,
             "profile_target_low": target_low,
             "profile_target_high": target_high,
-            "pump_status": _text(pump.get("status")),
+            "pump_status": pump_status,
             "pump_connected": bool(pump),
             "pump_clock": pump_clock,
             "pump_firmware": _text(pump_ext.get("Version")),

@@ -9,10 +9,25 @@
           "api_key": "API key",
           "entries_count": "Glucose entries to retrieve"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Nightscout Extended",
+        "description": "Update the Nightscout URL, API key, or glucose history size.",
+        "data": {
+          "url": "Nightscout URL",
+          "api_key": "API key",
+          "entries_count": "Glucose entries to retrieve"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect to Nightscout."
+      "cannot_connect": "Unable to connect to Nightscout.",
+      "invalid_auth": "Authentication failed. Check the API key.",
+      "invalid_response": "Nightscout returned an invalid response.",
+      "invalid_url": "Enter a valid HTTP or HTTPS Nightscout URL."
+    },
+    "abort": {
+      "already_configured": "This Nightscout instance is already configured."
     }
   }
 }

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+from typing import Any
+
+import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.const import CONF_API_KEY
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    CONF_API_KEY,
     CONF_ENTRIES_COUNT,
     CONF_URL,
     DEFAULT_ENTRIES_COUNT,
@@ -13,48 +18,175 @@ from .const import (
 )
 
 
+class NightscoutConnectionError(Exception):
+    """Base connection error."""
+
+
+class NightscoutAuthError(NightscoutConnectionError):
+    """Authentication failed."""
+
+
+class NightscoutResponseError(NightscoutConnectionError):
+    """Nightscout returned an unexpected response."""
+
+
+def _normalise_url(value: str) -> str:
+    url = value.strip().rstrip("/")
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("invalid_url")
+    return url
+
+
+async def _test_connection(
+    hass,
+    url: str,
+    api_key: str,
+) -> None:
+    """Perform a small, independent connection test for the config flow."""
+    session = async_get_clientsession(hass)
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["API-SECRET"] = api_key
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        async with session.get(
+            f"{url}/api/v1/status.json",
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as response:
+            if response.status in (401, 403):
+                raise NightscoutAuthError
+            if response.status >= 400:
+                raise NightscoutConnectionError
+            status = await response.json(content_type=None)
+
+        if not isinstance(status, dict):
+            raise NightscoutResponseError
+
+        # A successful status response is sufficient to prove connectivity,
+        # but entries are also checked because the integration depends on them.
+        async with session.get(
+            f"{url}/api/v1/entries.json",
+            params={"count": 1},
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as response:
+            if response.status in (401, 403):
+                raise NightscoutAuthError
+            if response.status >= 400:
+                raise NightscoutConnectionError
+            entries = await response.json(content_type=None)
+
+        if not isinstance(entries, list):
+            raise NightscoutResponseError
+
+    except NightscoutConnectionError:
+        raise
+    except NightscoutResponseError:
+        raise
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise NightscoutConnectionError from err
+    except (ValueError, TypeError) as err:
+        raise NightscoutResponseError from err
+
+
 class NightscoutExtendedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a Nightscout Extended config flow."""
+
     VERSION = 1
 
-    async def async_step_user(self, user_input=None):
-        errors = {}
+    def _schema(self, current: dict[str, Any] | None = None) -> vol.Schema:
+        current = current or {}
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_URL,
+                    default=current.get(CONF_URL, ""),
+                ): str,
+                vol.Optional(
+                    CONF_API_KEY,
+                    default=current.get(CONF_API_KEY, ""),
+                ): str,
+                vol.Optional(
+                    CONF_ENTRIES_COUNT,
+                    default=current.get(
+                        CONF_ENTRIES_COUNT, DEFAULT_ENTRIES_COUNT
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=48, max=1000)),
+            }
+        )
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Handle initial setup."""
+        errors: dict[str, str] = {}
 
         if user_input is not None:
-            url = user_input[CONF_URL].strip().rstrip("/")
-            user_input[CONF_URL] = url
-
-            # Do a lightweight validation by constructing the coordinator and
-            # performing its first refresh. The coordinator reports useful
-            # connection/authentication errors.
             try:
-                from .coordinator import NightscoutExtendedCoordinator
-
-                coordinator = NightscoutExtendedCoordinator(
+                url = _normalise_url(user_input[CONF_URL])
+                user_input[CONF_URL] = url
+                await _test_connection(
                     self.hass,
-                    type(
-                        "Entry",
-                        (),
-                        {"data": user_input, "entry_id": "config_flow"},
-                    )(),
+                    url,
+                    user_input.get(CONF_API_KEY, "").strip(),
                 )
-                await coordinator.async_config_entry_first_refresh()
-            except Exception:
+            except ValueError:
+                errors["base"] = "invalid_url"
+            except NightscoutAuthError:
+                errors["base"] = "invalid_auth"
+            except NightscoutResponseError:
+                errors["base"] = "invalid_response"
+            except NightscoutConnectionError:
                 errors["base"] = "cannot_connect"
             else:
                 await self.async_set_unique_id(url)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
-                    title=url,
+                    title=NAME,
                     data=user_input,
                 )
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_URL): str,
-                vol.Optional(CONF_API_KEY, default=""): str,
-                vol.Optional(
-                    CONF_ENTRIES_COUNT, default=DEFAULT_ENTRIES_COUNT
-                ): vol.All(vol.Coerce(int), vol.Range(min=48, max=1000)),
-            }
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self._schema(),
+            errors=errors,
         )
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Handle reconfiguration of an existing entry."""
+        errors: dict[str, str] = {}
+        current = self._get_reconfigure_entry().data
+
+        if user_input is not None:
+            try:
+                url = _normalise_url(user_input[CONF_URL])
+                user_input[CONF_URL] = url
+                await _test_connection(
+                    self.hass,
+                    url,
+                    user_input.get(CONF_API_KEY, "").strip(),
+                )
+            except ValueError:
+                errors["base"] = "invalid_url"
+            except NightscoutAuthError:
+                errors["base"] = "invalid_auth"
+            except NightscoutResponseError:
+                errors["base"] = "invalid_response"
+            except NightscoutConnectionError:
+                errors["base"] = "cannot_connect"
+            else:
+                return self.async_update_reload_and_abort(
+                    self._get_reconfigure_entry(),
+                    data_updates=user_input,
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self._schema(current),
+            errors=errors,
+        )
