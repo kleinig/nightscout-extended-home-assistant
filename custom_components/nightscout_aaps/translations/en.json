@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Nightscout AAPS",
+        "description": "Connect to a publicly accessible Nightscout instance. No API secret is required when your Nightscout endpoints are public.",
+        "data": {
+          "url": "Nightscout URL",
+          "cartridge_capacity": "Cartridge capacity (U)",
+          "daily_usage": "Fallback daily insulin usage (U/day)",
+          "history_days": "Reservoir history window (days)",
+          "reservoir_warning": "Reservoir warning threshold (U)",
+          "reservoir_critical": "Reservoir critical threshold (U)",
+          "pump_battery_warning": "Pump battery warning threshold (%)",
+          "phone_battery_warning": "AAPS phone battery warning threshold (%)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to Nightscout or read device status."
+    },
+    "abort": {
+      "already_configured": "This Nightscout URL is already configured."
+    }
+  }
+}
