@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfTime
 from homeassistant.core import HomeAssistant
@@ -13,19 +16,27 @@ from .coordinator import NightscoutCoordinator
 
 
 SPECS = [
-    # Core glucose
+    # Glucose
     ("bg_mgdl", "Blood Glucose (mg/dL)", "mg/dL", None, SensorStateClass.MEASUREMENT, None),
     ("bg_mmol", "Blood Glucose (mmol/L)", "mmol/L", None, SensorStateClass.MEASUREMENT, None),
     ("delta_mgdl", "Glucose Delta (mg/dL)", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("delta_mmol", "Glucose Delta (mmol/L)", "mmol/L", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
+    ("direction", "Glucose Direction", None, None, None, None),
+    ("glucose_age", "Glucose Data Age", UnitOfTime.SECONDS, SensorDeviceClass.DURATION, None, EntityCategory.DIAGNOSTIC),
+
+    # Statistics
     ("avg_bg_mgdl", "Average BG (mg/dL)", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("avg_bg_mmol", "Average BG (mmol/L)", "mmol/L", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("bg_sd_mgdl", "BG Standard Deviation", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("bg_cv", "BG Coefficient of Variation", PERCENTAGE, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
-    ("glucose_age", "Glucose Data Age", UnitOfTime.SECONDS, SensorDeviceClass.DURATION, None, EntityCategory.DIAGNOSTIC),
-    ("direction", "Glucose Direction", None, None, None, None),
+    ("tir_percent", "Time in Range", PERCENTAGE, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
+    ("tbr_percent", "Time Below Range", PERCENTAGE, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
+    ("tar_percent", "Time Above Range", PERCENTAGE, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
+    ("very_high_percent", "Time Very High", PERCENTAGE, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
+    ("gmi", "Glucose Management Indicator", None, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
+    ("glucose_count", "Glucose Entries", None, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
 
-    # AAPS / algorithm
+    # AAPS algorithm
     ("eventual_bg_mgdl", "Eventual BG (mg/dL)", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("eventual_bg_mmol", "Eventual BG (mmol/L)", "mmol/L", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("target_mgdl", "Target BG (mg/dL)", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
@@ -35,8 +46,8 @@ SPECS = [
     ("activity", "Insulin Activity", "U/min", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("cob", "Carbs On Board", "g", None, SensorStateClass.MEASUREMENT, None),
     ("insulin_req", "Insulin Required", "U", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
+    ("carbs_req", "Carbs Required", "g", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("sensitivity_ratio", "Sensitivity Ratio", None, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
-    ("dynamic_isf", "Dynamic ISF Active", None, None, None, EntityCategory.DIAGNOSTIC),
     ("isf_mgdl_for_carbs", "ISF for Carbs", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("current_isf", "Current ISF", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("profile_sens", "Profile Sensitivity", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
@@ -45,6 +56,8 @@ SPECS = [
     ("carb_impact_duration", "Carb Impact Duration", "min", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("uam_impact", "UAM Impact", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("uam_duration", "UAM Duration", "min", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
+
+    # Predictions
     ("avg_pred_bg_mgdl", "Average Predicted BG (mg/dL)", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("avg_pred_bg_mmol", "Average Predicted BG (mmol/L)", "mmol/L", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("min_pred_bg_mgdl", "Minimum Predicted BG (mg/dL)", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
@@ -55,11 +68,6 @@ SPECS = [
     ("min_iob_pred_bg_mmol", "Minimum IOB Predicted BG (mmol/L)", "mmol/L", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("naive_eventual_bg_mgdl", "Naive Eventual BG (mg/dL)", "mg/dL", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("naive_eventual_bg_mmol", "Naive Eventual BG (mmol/L)", "mmol/L", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
-    ("carbs_req", "Carbs Required", "g", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
-    ("requested_rate", "Requested Basal Rate", "U/h", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
-    ("requested_duration", "Requested Temp Basal Duration", "min", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
-    ("smb", "SMB Amount", "U", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
-    ("decision", "AAPS Decision", None, None, None, EntityCategory.DIAGNOSTIC),
 
     # Pump
     ("pump_reservoir", "Pump Reservoir", "U", None, SensorStateClass.MEASUREMENT, None),
@@ -75,21 +83,20 @@ SPECS = [
     ("temp_basal_remaining", "Temp Basal Remaining", "min", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("active_profile", "Active Pump Profile", None, None, None, None),
 
-    # Uploader / Nightscout
+    # AAPS / Nightscout identity
     ("phone_battery", "AAPS Phone Battery", PERCENTAGE, None, SensorStateClass.MEASUREMENT, None),
     ("aaps_device", "AAPS Device", None, None, None, EntityCategory.DIAGNOSTIC),
-    ("last_aaps_update", "Last AAPS Update", None, SensorDeviceClass.TIMESTAMP, None, EntityCategory.DIAGNOSTIC),
-    ("status_version", "Nightscout Version", None, None, None, EntityCategory.DIAGNOSTIC),
     ("aaps_version", "AAPS Version", None, None, None, EntityCategory.DIAGNOSTIC),
+    ("last_aaps_update", "Last AAPS Update", None, SensorDeviceClass.TIMESTAMP, None, EntityCategory.DIAGNOSTIC),
+    ("nightscout_version", "Nightscout Version", None, None, None, EntityCategory.DIAGNOSTIC),
 
-    # Daily / history
+    # History
     ("insulin_total_today", "Insulin Total Today", "U", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("bolus_total_today", "Bolus Total Today", "U", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("carbs_total_today", "Carbs Total Today", "g", None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
-    ("glucose_count", "Glucose Entries", None, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
     ("treatment_count", "Treatments", None, None, SensorStateClass.MEASUREMENT, EntityCategory.DIAGNOSTIC),
 
-    # Configuration / limits
+    # Configuration
     ("max_bolus", "AAPS Max Bolus", "U", None, None, EntityCategory.CONFIG),
     ("max_carbs", "AAPS Max Carbs", "g", None, None, EntityCategory.CONFIG),
     ("low_mark_mmol", "AAPS Low Mark", "mmol/L", None, None, EntityCategory.CONFIG),
@@ -122,7 +129,7 @@ class NightscoutSensor(CoordinatorEntity[NightscoutCoordinator], SensorEntity):
             "name": "Nightscout",
             "manufacturer": "Nightscout",
             "configuration_url": coordinator.base_url,
-            "sw_version": coordinator.data.get("status_version"),
+            "sw_version": coordinator.data.get("nightscout_version"),
         }
 
     @property
@@ -131,43 +138,49 @@ class NightscoutSensor(CoordinatorEntity[NightscoutCoordinator], SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        data = self.coordinator.data
+        d = self.coordinator.data
         if self._key == "bg_mmol":
             return {
-                "direction": data.get("direction"),
-                "delta_mmol_l": data.get("delta_mmol"),
-                "data_age_seconds": data.get("glucose_age"),
+                "direction": d.get("direction"),
+                "delta_mmol_l": d.get("delta_mmol"),
+                "data_age_seconds": d.get("glucose_age"),
+                "time_in_range_percent": d.get("tir_percent"),
+                "time_below_range_percent": d.get("tbr_percent"),
+                "time_above_range_percent": d.get("tar_percent"),
             }
         if self._key == "decision":
             return {
-                "reason": data.get("decision_reason"),
-                "algorithm": data.get("algorithm"),
-                "insulin_required_u": data.get("insulin_req"),
-                "requested_rate_u_h": data.get("requested_rate"),
-                "requested_duration_min": data.get("requested_duration"),
-                "smb_u": data.get("smb"),
-                "sensitivity_ratio": data.get("sensitivity_ratio"),
-                "dynamic_isf": data.get("dynamic_isf"),
-                "eventual_bg_mmol_l": data.get("eventual_bg_mmol"),
-                "target_bg_mmol_l": data.get("target_mmol"),
-                "min_predicted_bg_mmol_l": data.get("min_pred_bg_mmol"),
+                "algorithm": d.get("algorithm"),
+                "reason": d.get("decision_reason"),
+                "insulin_required_u": d.get("insulin_req"),
+                "carbs_required_g": d.get("carbs_req"),
+                "requested_rate_u_h": d.get("requested_rate"),
+                "requested_duration_min": d.get("requested_duration"),
+                "requested_temp": d.get("requested_temp"),
+                "requested_smb_u": d.get("requested_smb"),
+                "smb_u": d.get("smb"),
+                "smb_enabled": d.get("smb_enabled"),
+                "dynamic_isf": d.get("dynamic_isf"),
+                "sensitivity_ratio": d.get("sensitivity_ratio"),
+                "eventual_bg_mmol_l": d.get("eventual_bg_mmol"),
+                "target_bg_mmol_l": d.get("target_mmol"),
+                "iob_u": d.get("iob"),
+                "cob_g": d.get("cob"),
+                "prediction_arrays": d.get("prediction_arrays"),
             }
         if self._key == "pump_status":
             return {
-                "reservoir_u": data.get("pump_reservoir"),
-                "battery_percent": data.get("pump_battery"),
-                "firmware": data.get("pump_firmware"),
-                "active_profile": data.get("active_profile"),
-                "last_bolus_amount_u": data.get("last_bolus_amount"),
+                "reservoir_u": d.get("pump_reservoir"),
+                "battery_percent": d.get("pump_battery"),
+                "firmware": d.get("pump_firmware"),
+                "active_profile": d.get("active_profile"),
+                "last_bolus_amount_u": d.get("last_bolus_amount"),
+                "temp_basal_rate_u_h": d.get("temp_basal_rate"),
+                "temp_basal_remaining_min": d.get("temp_basal_remaining"),
             }
         return None
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        NightscoutSensor(
-            coordinator, entry.entry_id, *spec
-        )
-        for spec in SPECS
-    )
+    async_add_entities(NightscoutSensor(coordinator, entry.entry_id, *spec) for spec in SPECS)

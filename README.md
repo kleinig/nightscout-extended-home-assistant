@@ -1,41 +1,35 @@
-# Nightscout Home Assistant Integration
+# Nightscout Home Assistant Integration v0.5.0
 
-A HACS-style custom Home Assistant integration for a Nightscout site.
+A HACS-style Home Assistant custom integration for Nightscout.
 
-## Features
+## v0.5 highlights
 
-- Nightscout status/version
-- Current glucose in mg/dL and mmol/L
-- Delta, direction, average, SD and CV
-- Glucose data age
-- Eventual BG, target BG and AAPS prediction diagnostics
-- IOB, basal IOB, insulin activity and COB
-- AAPS decision diagnostics (read-only)
-- Dynamic ISF and sensitivity diagnostics
-- Pump reservoir, battery, status, profile and firmware
-- Temp basal and last bolus information
-- AAPS uploader battery/charging/device
-- Daily treatment totals
-- AAPS configuration/threshold diagnostics
-- Binary sensors for glucose state, closed loop, pump/uploader state and warnings
+- More robust AAPS `enacted` / `suggested` / `requested` parsing
+- Current glucose and delta from Nightscout entries
+- 24-hour/loaded-window glucose statistics
+- Time in range / below range / above range
+- GMI estimate
+- IOB, basal IOB, activity and COB
+- AAPS decision diagnostics
+- Prediction arrays exposed as attributes
+- Pump reservoir, battery, status, profile, firmware and temp basal
+- Last bolus details from both pump status and treatments
+- AAPS phone/uploader information
+- AAPS and Nightscout versions
+- AAPS configuration diagnostics
+- Warning/critical binary sensors
+- Public Nightscout sites supported without an API secret
+- Monitoring/diagnostics only; no dosing or pump-control commands
 
 ## Installation
 
-### HACS custom repository
+1. Add the repository to HACS as a custom integration repository.
+2. Install **Nightscout**.
+3. Restart Home Assistant.
+4. Add **Nightscout** from Settings → Devices & services.
+5. Enter your Nightscout URL.
+6. Leave API secret blank if your site allows public API reads.
 
-1. Add this repository as a custom integration repository in HACS.
-2. Select **Integration**.
-3. Install **Nightscout**.
-4. Restart Home Assistant.
-5. Go to **Settings → Devices & services → Add integration**.
-6. Search for **Nightscout**.
+## Safety
 
-The integration supports Nightscout sites that do not require an API secret.
-
-## Important
-
-This integration is for monitoring and diagnostics. It does not send dosing commands to AAPS or a pump and does not provide treatment recommendations.
-
-## Data
-
-The integration reads Nightscout API endpoints including status, devicestatus, entries, treatments and profile.
+This integration is read-only monitoring. It does not issue treatment recommendations, change AAPS settings, or control a pump.

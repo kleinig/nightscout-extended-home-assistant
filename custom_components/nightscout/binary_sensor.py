@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -45,54 +47,45 @@ class NightscoutBinarySensor(CoordinatorEntity[NightscoutCoordinator], BinarySen
             "name": "Nightscout",
             "manufacturer": "Nightscout",
             "configuration_url": coordinator.base_url,
-            "sw_version": coordinator.data.get("status_version"),
+            "sw_version": coordinator.data.get("nightscout_version"),
         }
 
     @property
     def is_on(self):
-        data = self.coordinator.data
+        d = self.coordinator.data
         if self._key == "glucose_low":
-            bg = data.get("bg_mmol")
-            low = data.get("low_mark_mmol") or 4.0
-            return bg is not None and bg < low
+            bg = d.get("bg_mmol")
+            return bg is not None and bg < (d.get("low_mark_mmol") or 4.0)
         if self._key == "glucose_high":
-            bg = data.get("bg_mmol")
-            high = data.get("high_mark_mmol") or 10.0
-            return bg is not None and bg > high
+            bg = d.get("bg_mmol")
+            return bg is not None and bg > (d.get("high_mark_mmol") or 10.0)
         if self._key == "closed_loop":
-            return str(data.get("pump_status") or "").lower() in {"closed loop", "closed_loop"}
+            return str(d.get("pump_status") or "").lower().replace("_", " ") == "closed loop"
         if self._key == "pump_connected":
-            status = str(data.get("pump_status") or "").lower()
-            return bool(status) and data.get("last_aaps_update") is not None
-        if self._key == "phone_charging":
-            return bool(data.get("phone_charging"))
+            age = d.get("last_aaps_update")
+            return bool(d.get("pump_status")) and bool(age) and (
+                (datetime.now(timezone.utc) - age).total_seconds() < 900
+            )
         if self._key == "stale_glucose":
-            age = data.get("glucose_age")
+            age = d.get("glucose_age")
             return age is None or age > 600
         if self._key == "reservoir_warning":
-            r = data.get("pump_reservoir")
-            threshold = data.get("res_warning")
-            return r is not None and threshold is not None and r <= threshold
+            r, t = d.get("pump_reservoir"), d.get("res_warning")
+            return r is not None and t is not None and r <= t
         if self._key == "reservoir_critical":
-            r = data.get("pump_reservoir")
-            threshold = data.get("res_critical")
-            return r is not None and threshold is not None and r <= threshold
+            r, t = d.get("pump_reservoir"), d.get("res_critical")
+            return r is not None and t is not None and r <= t
         if self._key == "pump_battery_warning":
-            b = data.get("pump_battery")
-            threshold = data.get("bat_warning")
-            return b is not None and threshold is not None and b <= threshold
+            b, t = d.get("pump_battery"), d.get("bat_warning")
+            return b is not None and t is not None and b <= t
         if self._key == "pump_battery_critical":
-            b = data.get("pump_battery")
-            threshold = data.get("bat_critical")
-            return b is not None and threshold is not None and b <= threshold
-        return bool(data.get(self._key))
+            b, t = d.get("pump_battery"), d.get("bat_critical")
+            return b is not None and t is not None and b <= t
+        return bool(d.get(self._key))
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
-        NightscoutBinarySensor(
-            coordinator, entry.entry_id, *spec
-        )
-        for spec in SPECS
+        NightscoutBinarySensor(coordinator, entry.entry_id, *spec) for spec in SPECS
     )
