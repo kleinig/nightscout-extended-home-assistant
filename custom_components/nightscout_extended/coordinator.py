@@ -124,41 +124,51 @@ def _first_text_from_text(text: str | None, label: str) -> str | None:
 
 
 def _decision(aaps: dict[str, Any]) -> dict[str, Any]:
-    enacted = aaps.get("openaps", {}).get("enacted", {})
-    suggested = aaps.get("openaps", {}).get("suggested", {})
-    if not isinstance(enacted, dict):
-        enacted = {}
-    if not isinstance(suggested, dict):
-        suggested = {}
+    openaps = aaps.get("openaps")
+    if not isinstance(openaps, dict):
+        return {}
 
-    # Prefer enacted/requested data when it exists, otherwise suggested.
+    enacted = openaps.get("enacted")
+    suggested = openaps.get("suggested")
+    enacted = enacted if isinstance(enacted, dict) else {}
+    suggested = suggested if isinstance(suggested, dict) else {}
+
     source = enacted or suggested
-    requested = source.get("requested", {})
-    if not isinstance(requested, dict):
-        requested = {}
+    source_name = "enacted" if enacted else ("suggested" if suggested else None)
+    requested = source.get("requested")
+    requested = requested if isinstance(requested, dict) else {}
+
+    def requested_value(name: str) -> float | None:
+        top = _num(source.get(name))
+        if top is not None and top >= 0:
+            return top
+        return _num(requested.get(name))
+
+    pred = source.get("predBGs")
+    pred = pred if isinstance(pred, dict) else {}
 
     return {
-        "source": "enacted" if enacted else ("suggested" if suggested else None),
-        "algorithm": source.get("algorithm"),
-        "timestamp": source.get("timestamp"),
+        "source": source_name,
+        "algorithm": _text(source.get("algorithm")),
+        "timestamp": _text(source.get("timestamp")),
         "bg": _mgdl(source.get("bg")),
-        "delta": _mgdl(source.get("delta")) if source.get("delta") is not None else None,
+        "delta": _num(source.get("delta")),
         "eventual_bg": _mgdl(source.get("eventualBG")),
         "target_bg": _mgdl(source.get("targetBG")),
         "insulin_required": _num(source.get("insulinReq")),
         "sensitivity_ratio": _num(source.get("sensitivityRatio")),
-        "variable_sens": _mgdl(source.get("variable_sens")),
+        "variable_sens": _num(source.get("variable_sens")),
         "iob": _num(source.get("IOB")),
         "cob": _num(source.get("COB")),
-        "rate": _num(source.get("rate", requested.get("rate"))),
-        "duration": _num(source.get("duration", requested.get("duration"))),
-        "smb": _num(source.get("smb", requested.get("smb"))),
+        "rate": requested_value("rate"),
+        "duration": requested_value("duration"),
+        "smb": requested_value("smb"),
+        "requested_temp": _text(requested.get("temp")),
         "reason": _text(source.get("reason")),
         "console_log": _text(source.get("consoleLog")),
         "console_error": _text(source.get("consoleError")),
-        "pred_bgs": source.get("predBGs") if isinstance(source.get("predBGs"), dict) else {},
+        "pred_bgs": pred,
     }
-
 
 class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry) -> None:
@@ -237,7 +247,12 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         config_record = next(
-            (d for d in devicestatus if isinstance(d, dict) and isinstance(d.get("configuration"), dict)),
+            (
+                d for d in devicestatus
+                if isinstance(d, dict)
+                and isinstance(d.get("configuration"), dict)
+                and bool(d.get("configuration"))
+            ),
             {},
         )
         aaps_config = config_record.get("configuration", {}) if isinstance(config_record, dict) else {}

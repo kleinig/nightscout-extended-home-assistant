@@ -111,35 +111,8 @@ SENSORS = [
 
 
 def _value(data: dict[str, Any], key: str) -> Any:
-    if key == "bg_mgdl":
-        return data.get("bg")
-    if key == "bg_mmol":
-        v = data.get("bg")
-        return v / 18 if v is not None else None
-    if key == "delta_mgdl":
-        return data.get("delta")
-    if key == "delta_mmol":
-        v = data.get("delta")
-        return v / 18 if v is not None else None
-    if key == "current_isf":
-        return data.get("variable_sens")
-    if key == "eventual_bg":
-        return data.get("eventual_bg")
-    if key == "eventual_bg_mmol":
-        v = data.get("eventual_bg")
-        return v / 18 if v is not None else None
-    if key == "target_bg":
-        return data.get("target_bg")
-    if key == "target_bg_mmol":
-        v = data.get("target_bg")
-        return v / 18 if v is not None else None
-    if key in {"profile_target_low", "profile_target_high", "profile_name", "dia"}:
-        return data.get(key)
-    if key == "phone_battery":
-        return data.get("uploader_battery")
-    if key in {"requested_rate", "requested_duration", "smb_amount"}:
-        return data.get(key)
     return data.get(key)
+
 
 
 class NightscoutExtendedSensor(SensorEntity):
