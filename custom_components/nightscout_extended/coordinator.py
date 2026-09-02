@@ -33,6 +33,14 @@ def _num(value):
         return None
 
 
+def _text(value):
+    """Return a non-empty string value, or None."""
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
 def _first_num(*values):
     for value in values:
         n = _num(value)
@@ -338,9 +346,9 @@ class NightscoutCoordinator(DataUpdateCoordinator):
             "phone_charging": bool(latest_aaps.get("isCharging")),
             "aaps_device": latest_aaps.get("device"),
             "aaps_version": (
-                _str(configuration.get("version"))
-                or _str(configuration.get("aaps_version"))
-                or _str(latest_aaps.get("version"))
+                _text(configuration.get("version"))
+                or _text(configuration.get("aaps_version"))
+                or _text(latest_aaps.get("version"))
                 or _walk(latest_aaps, {"version"})
             ),
             "pump_battery": _num((pump.get("battery") or {}).get("percent")),

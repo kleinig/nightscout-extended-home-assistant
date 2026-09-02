@@ -1,4 +1,4 @@
-# Nightscout Extended v0.7.2
+# Nightscout Extended v0.7.3
 
 Read-only Home Assistant custom integration for Nightscout data.
 
