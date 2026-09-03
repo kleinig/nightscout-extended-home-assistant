@@ -33,21 +33,21 @@ SENSORS = [
 
     # Glucose
     ("bg", "Blood Glucose", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
-    ("delta", "BG Delta", None, None, EntityCategory.DIAGNOSTIC),
+    ("delta", "BG Delta", None, None, None),
     ("direction", "BG Direction", None, None, None),
-    ("glucose_age", "Glucose Age", "s", None, EntityCategory.DIAGNOSTIC),
+    ("glucose_age", "Glucose Age", "s", None, None),
 
     # AAPS/OpenAPS decision - raw values where supplied
     ("decision_state", "AAPS Decision", None, None, EntityCategory.DIAGNOSTIC),
     ("decision_reason", "AAPS Decision Reason", None, None, EntityCategory.DIAGNOSTIC),
     ("decision_source", "AAPS Decision Source", None, None, EntityCategory.DIAGNOSTIC),
     ("algorithm", "AAPS Algorithm", None, None, EntityCategory.DIAGNOSTIC),
-    ("variable_sens", "Variable Sensitivity", None, None, EntityCategory.DIAGNOSTIC),
+    ("variable_sens", "Variable Sensitivity", None, None, None),
     ("cob", "Carbs on Board", "g", None, None),
-    ("eventual_bg", "Eventual BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
+    ("eventual_bg", "Eventual BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
     ("target_bg", "AAPS Target BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("insulin_required", "Insulin Required", "U", None, None),
-    ("sensitivity_ratio", "Sensitivity Ratio", "%", None, EntityCategory.DIAGNOSTIC),
+    ("sensitivity_ratio", "Sensitivity Ratio", "%", None, None),
     ("snooze_bg", "Snooze BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("aaps_tick", "AAPS Tick", None, None, EntityCategory.DIAGNOSTIC),
     ("aaps_temp", "AAPS Temp Type", None, None, EntityCategory.DIAGNOSTIC),
@@ -103,10 +103,10 @@ SENSORS = [
 
     # Predictions: native AAPS minima plus useful derived series statistics
     ("average_pred", "Average Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
-    ("minimum_pred", "Minimum Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
-    ("min_iob_pred", "Minimum IOB Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
-    ("min_guard", "Minimum Guard BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
-    ("min_uam", "Minimum UAM Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
+    ("minimum_pred", "Minimum Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
+    ("min_iob_pred", "Minimum IOB Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
+    ("min_guard", "Minimum Guard BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
+    ("min_uam", "Minimum UAM Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
     ("naive_eventual", "Naive Eventual BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("bg_undershoot", "BG Undershoot", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("carb_impact", "Carb Impact", None, None, EntityCategory.DIAGNOSTIC),
@@ -115,7 +115,7 @@ SENSORS = [
     ("uam_duration", "UAM Duration", "min", None, EntityCategory.DIAGNOSTIC),
     ("zero_temp_duration", "Zero Temp Duration", "min", None, EntityCategory.DIAGNOSTIC),
     ("zero_temp_effect", "Zero Temp Effect", None, None, EntityCategory.DIAGNOSTIC),
-    ("carbs_required", "Carbs Required", "g", None, EntityCategory.DIAGNOSTIC),
+    ("carbs_required", "Carbs Required", "g", None, None),
     ("autosens_ratio", "Autosens Ratio", "%", None, EntityCategory.DIAGNOSTIC),
     ("future_state_sensitivity", "Future State Sensitivity", None, None, EntityCategory.DIAGNOSTIC),
     ("csf", "Carb Sensitivity Factor", None, None, EntityCategory.DIAGNOSTIC),
@@ -133,7 +133,7 @@ SENSORS = [
     ("profile_name", "Active Profile", None, None, None),
     ("profile_timezone", "Nightscout Profile Timezone", None, None, EntityCategory.DIAGNOSTIC),
     ("current_isf", "Current ISF", None, None, None),
-    ("profile_sens", "Profile Sensitivity", None, None, EntityCategory.DIAGNOSTIC),
+    ("profile_sens", "Profile Sensitivity", None, None, None),
     ("carb_ratio", "Carb Ratio", "g/U", None, None),
     ("dia", "Insulin DIA", "h", None, None),
     ("profile_target_low", "Profile Target Low", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
@@ -174,7 +174,7 @@ SENSORS = [
     ("last_bolus_time", "Last Bolus Time", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
 
     # Uploader/service
-    ("phone_battery", "AAPS Phone Battery", "%", None, None),
+    ("phone_battery", "AAPS Phone Battery", "%", None, EntityCategory.DIAGNOSTIC),
     ("uploader_battery_voltage", "AAPS Uploader Battery Voltage", "mV", None, EntityCategory.DIAGNOSTIC),
     ("nightscout_version", "Nightscout Version", None, None, EntityCategory.DIAGNOSTIC),
     ("aaps_version", "AAPS Version", None, None, EntityCategory.DIAGNOSTIC),

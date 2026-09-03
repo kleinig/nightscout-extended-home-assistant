@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
 
 from .const import DOMAIN, NAME, VERSION
 from .coordinator import NightscoutExtendedCoordinator
@@ -17,11 +18,11 @@ DEVICE = DeviceInfo(
 
 
 BINARY_SENSORS = [
-    ("phone_charging", "AAPS Phone Charging"),
-    ("dynamic_isf", "Dynamic ISF Active"),
-    ("aaps_dynamic_isf_running", "AAPS Dynamic ISF Running"),
-    ("smb_enabled", "SMB Enabled"),
-    ("delivery_received", "AAPS Delivery Received"),
+    ("phone_charging", "AAPS Phone Charging", EntityCategory.DIAGNOSTIC),
+    ("dynamic_isf", "Dynamic ISF Active", EntityCategory.DIAGNOSTIC),
+    ("aaps_dynamic_isf_running", "AAPS Dynamic ISF Running", EntityCategory.DIAGNOSTIC),
+    ("smb_enabled", "SMB Enabled", EntityCategory.DIAGNOSTIC),
+    ("delivery_received", "AAPS Delivery Received", EntityCategory.DIAGNOSTIC),
     ("pump_connected", "Pump Connected"),
     ("pump_bolusing", "Pump Bolusing"),
     ("pump_suspended", "Pump Suspended"),
@@ -99,12 +100,13 @@ def _is_on(data, key):
 class NightscoutExtendedBinarySensor(BinarySensorEntity):
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, key, name):
+    def __init__(self, coordinator, key, name, category=None):
         self.coordinator = coordinator
         self.key = key
         self._attr_name = name
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
         self._attr_device_info = DEVICE
+        self._attr_entity_category = category
 
     @property
     def is_on(self):
@@ -117,5 +119,5 @@ class NightscoutExtendedBinarySensor(BinarySensorEntity):
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data["nightscout_extended"][entry.entry_id]
     async_add_entities(
-        [NightscoutExtendedBinarySensor(coordinator, key, name) for key, name in BINARY_SENSORS]
+        [NightscoutExtendedBinarySensor(coordinator, key, name, category) for key, name, category in [(item[0], item[1], item[2] if len(item) > 2 else None) for item in BINARY_SENSORS]]
     )
