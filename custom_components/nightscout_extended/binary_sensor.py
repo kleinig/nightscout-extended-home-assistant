@@ -6,6 +6,7 @@ from homeassistant.helpers.entity import EntityCategory
 
 from .const import DOMAIN, NAME, VERSION
 from .coordinator import NightscoutExtendedCoordinator
+from .coordinator import _bool
 
 
 DEVICE = DeviceInfo(
@@ -48,30 +49,30 @@ def _is_on(data, key):
     direction = str(data.get("direction") or "").lower()
 
     if key == "phone_charging":
-        return bool(data.get("charging"))
+        return _bool(data.get("charging")) or False
     if key == "dynamic_isf":
-        return bool(data.get("dynamic_isf"))
+        return _bool(data.get("dynamic_isf")) or False
     if key == "aaps_dynamic_isf_running":
         value = data.get("suggested_running_dynamic_isf")
-        return bool(data.get("dynamic_isf")) if value is None else bool(value)
+        return (_bool(data.get("dynamic_isf")) or False) if value is None else (_bool(value) or False)
     if key == "smb_enabled":
-        return bool(data.get("smb_enabled"))
+        return _bool(data.get("smb_enabled")) or False
     if key == "delivery_received":
-        return bool(data.get("delivery_received"))
+        return _bool(data.get("delivery_received")) or False
     if key == "pump_connected":
-        return bool(data.get("pump_connected"))
+        return _bool(data.get("pump_connected")) or False
     if key == "pump_bolusing":
-        return bool(data.get("pump_bolusing"))
+        return _bool(data.get("pump_bolusing")) or False
     if key == "pump_suspended":
-        return bool(data.get("pump_suspended"))
+        return _bool(data.get("pump_suspended")) or False
     if key == "socket_connected":
-        return bool(data.get("socket_connected"))
+        return _bool(data.get("socket_connected")) or False
     if key == "glucose_stale":
         return (data.get("glucose_age") or 0) > 600
     if key == "glucose_low":
-        return bg is not None and bg < ((data.get("low_mark") or 3.9) * 18)
+        return bg is not None and data.get("low_mark") is not None and bg < data["low_mark"]
     if key == "glucose_high":
-        return bg is not None and bg > ((data.get("high_mark") or 10.0) * 18)
+        return bg is not None and data.get("high_mark") is not None and bg > data["high_mark"]
     if key == "glucose_rising":
         return direction in {"singleup", "doubleup", "fortyfiveup"} or (delta is not None and delta > 0)
     if key == "glucose_falling":
@@ -81,7 +82,7 @@ def _is_on(data, key):
     if key == "glucose_rapid_falling":
         return direction in {"doubledown"} or (delta is not None and delta <= -3)
     if key == "closed_loop":
-        return bool(data.get("closed_loop"))
+        return _bool(data.get("closed_loop")) or False
     if key == "reservoir_warning_active":
         threshold = data.get("reservoir_warning")
         return data.get("reservoir") is not None and threshold is not None and data["reservoir"] <= threshold

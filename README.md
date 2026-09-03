@@ -21,6 +21,12 @@ making the primary entity set source-dependent.
 
 ------------------------------------------------------------------------
 
+## Current release
+
+**v1.2.1 — correctness and data-normalization release**
+
+This release audits glucose thresholds, profile units, AAPS units, glucose deltas/ticks, boolean parsing, Socket.IO delta merging, timestamps, and age display. Source values are normalized once internally before Home Assistant display-unit conversion.
+
 ## Features
 
 ### Blood glucose compatibility

@@ -36,7 +36,7 @@ SENSORS = [
     ("bg", "Blood Glucose", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, None),
     ("delta", "BG Delta", None, None, None),
     ("direction", "BG Direction", None, None, None),
-    ("glucose_age", "Glucose Age", "s", None, None),
+    ("glucose_age", "Glucose Age", None, None, None),
 
     # AAPS/OpenAPS decision - raw values where supplied
     ("decision_state", "AAPS Decision", None, None, EntityCategory.DIAGNOSTIC),
@@ -200,10 +200,11 @@ GLUCOSE_KEYS = {
     "suggested_min_pred_bg", "suggested_target_bg", "enacted_bg", "enacted_snooze_bg",
     "enacted_min_pred_bg", "enacted_target_bg", "average_pred", "minimum_pred", "min_iob_pred",
     "min_guard", "min_uam", "naive_eventual", "bg_undershoot", "average_bg", "bg_sd",
-    "profile_target_low", "profile_target_high", "low_mark", "high_mark", "aaps_tick", "suggested_tick", "enacted_tick",
+    "profile_target_low", "profile_target_high", "low_mark", "high_mark",
 }
-ISF_KEYS = {"current_isf", "profile_sens", "variable_sens", "suggested_variable_sens", "isf_for_carbs"}
+ISF_KEYS = {"current_isf", "profile_sens", "variable_sens", "suggested_variable_sens", "isf_for_carbs", "future_state_sensitivity"}
 IMPACT_KEYS = {"carb_impact", "uam_impact", "min_carb_impact"}
+DELTA_KEYS = {"delta", "aaps_tick", "suggested_tick", "enacted_tick"}
 CSF_KEYS = {"csf"}
 TIMESTAMP_KEYS = {key for key, _, _, device_class, _ in SENSORS if device_class == SensorDeviceClass.TIMESTAMP}
 
@@ -230,7 +231,7 @@ def _format_age_hours(value: Any) -> str | None:
 
 def _value(data: dict[str, Any], key: str) -> Any:
     value = data.get(key)
-    if key in {"cannula_age", "sensor_age", "insulin_age", "battery_age"}:
+    if key in {"cannula_age", "sensor_age", "insulin_age", "battery_age", "glucose_age"}:
         return _format_age_hours(value)
     glucose_unit = data.get("glucose_unit", "mmol/L")
     isf_unit = data.get("isf_unit", "mmol/L/U")
@@ -251,6 +252,9 @@ def _value(data: dict[str, Any], key: str) -> Any:
         # Display in 5% increments by default (e.g. 10%, 50%, 100%, 150%).
         return float(math.floor((temp_rate / base_rate * 100.0) / 5.0 + 0.5) * 5)
 
+    if key in DELTA_KEYS:
+        value = _number(value)
+        return value / 18.0 if value is not None and glucose_unit == "mmol/L" else value
     if key in GLUCOSE_KEYS:
         value = _number(value)
         return value / 18.0 if value is not None and glucose_unit == "mmol/L" else value
@@ -271,7 +275,11 @@ class NightscoutExtendedSensor(SensorEntity):
         self.key = key
         self._attr_name = name
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
-        if key in GLUCOSE_KEYS:
+        if key in DELTA_KEYS:
+            self._attr_native_unit_of_measurement = (
+                "mmol/L/5min" if coordinator.glucose_unit == "mmol/L" else "mg/dL/5min"
+            )
+        elif key in GLUCOSE_KEYS:
             self._attr_native_unit_of_measurement = coordinator.glucose_unit
         elif key in ISF_KEYS:
             self._attr_native_unit_of_measurement = coordinator.isf_unit

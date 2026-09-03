@@ -75,6 +75,45 @@ def _num(value: Any) -> float | None:
         return None
 
 
+def _bool(value: Any) -> bool | None:
+    """Parse common boolean representations without treating 'false' as True."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    text = str(value).strip().casefold()
+    if text in {"true", "1", "yes", "y", "on", "enabled"}:
+        return True
+    if text in {"false", "0", "no", "n", "off", "disabled"}:
+        return False
+    return None
+
+
+def _normalise_units(value: Any, default: str = "mg/dl") -> str:
+    """Normalize Nightscout/AAPS glucose-unit spellings."""
+    text = str(value or "").strip().casefold().replace("_", "/")
+    if text in {"mmol", "mmol/l", "mmol\u00a0/l"}:
+        return "mmol"
+    if text in {"mg/dl", "mgdl", "mg/dl."}:
+        return "mg/dl"
+    return _normalise_units(default, "mg/dl") if default != value else "mg/dl"
+
+
+def _glucose_to_mgdl(value: Any, units: Any) -> float | None:
+    """Convert a glucose concentration from source units to canonical mg/dL."""
+    number = _num(value)
+    if number is None:
+        return None
+    return number * 18.0 if _normalise_units(units) == "mmol" else number
+
+
+def _delta_to_mgdl(value: Any, units: Any) -> float | None:
+    """Convert a glucose delta/tick from source units to canonical mg/dL."""
+    return _glucose_to_mgdl(value, units)
+
+
 def _zero_if_none(value: Any) -> float:
     """Return a numeric value, using zero when the source has no value."""
     result = _num(value)
@@ -274,6 +313,19 @@ def _first_num(*values):
         if parsed is not None:
             return parsed
     return None
+
+
+def _has_openaps_data(record: Any) -> bool:
+    """Return True when a devicestatus record contains substantive OpenAPS data."""
+    if not isinstance(record, dict):
+        return False
+    openaps = record.get("openaps")
+    if not isinstance(openaps, dict):
+        return False
+    return any(
+        isinstance(openaps.get(key), dict) and bool(openaps.get(key))
+        for key in ("suggested", "enacted", "iob")
+    )
 
 
 def _decision(aaps: dict[str, Any]) -> dict[str, Any]:
@@ -542,10 +594,10 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             x for x in statuses
             if isinstance(x, dict)
             and (str(x.get("app", "")).upper() == "AAPS" or "aaps" in str(x.get("device", "")).lower())
-            and isinstance(x.get("openaps"), dict)
+            and _has_openaps_data(x)
         ]
         if not aaps_records:
-            aaps_records = [x for x in statuses if isinstance(x, dict) and isinstance(x.get("openaps"), dict)]
+            aaps_records = [x for x in statuses if _has_openaps_data(x)]
         if aaps_records:
             sort_key = lambda x: _parse_dt(x.get("date") or x.get("created_at"), profile_tz) or datetime.min.replace(tzinfo=timezone.utc)
             latest_aaps = max(aaps_records, key=sort_key)
@@ -638,8 +690,13 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.data["algorithm"] = _text(decision.get("algorithm"))
             self.data["decision_reason"] = decision.get("reason")
             self.data["decision_state"] = _decision_state(decision)
-            self.data["dynamic_isf"] = bool(latest_aaps.get("configuration", {}).get("apsConfiguration", {}).get("use_dynamic_sensitivity", self.data.get("dynamic_isf")))
-            self.data["delivery_received"] = decision.get("received")
+            dynamic_value = latest_aaps.get("configuration", {}).get("apsConfiguration", {}).get("use_dynamic_sensitivity")
+            parsed_dynamic = _bool(dynamic_value)
+            if parsed_dynamic is not None:
+                self.data["dynamic_isf"] = parsed_dynamic
+            parsed_received = _bool(decision.get("received"))
+            if parsed_received is not None:
+                self.data["delivery_received"] = parsed_received
             self.data["aaps_device"] = _text(latest_aaps.get("device")) or self.data.get("aaps_device")
 
             # Uploader/phone data is not guaranteed to be present on the same
@@ -667,7 +724,9 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if uploader_data.get("batteryVoltage") is not None:
                         self.data["uploader_battery_voltage"] = _num(uploader_data.get("batteryVoltage"))
                     if record.get("isCharging") is not None:
-                        self.data["charging"] = bool(record.get("isCharging"))
+                        parsed_charging = _bool(record.get("isCharging"))
+                        if parsed_charging is not None:
+                            self.data["charging"] = parsed_charging
                     if (
                         self.data.get("uploader_battery") is not None
                         and self.data.get("uploader_battery_voltage") is not None
@@ -678,16 +737,32 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             pump = latest_aaps.get("pump") if isinstance(latest_aaps.get("pump"), dict) else {}
             ext = pump.get("extended") if isinstance(pump.get("extended"), dict) else {}
             self.data["pump_status"] = _text(pump.get("status")) if not isinstance(pump.get("status"), dict) else _text(pump.get("status", {}).get("status"))
-            self.data["pump_connected"] = bool(pump)
+            pump_status_value = self.data.get("pump_status")
+            pump_status_time = self.data.get("pump_status_timestamp")
+            pump_clock_value = self.data.get("pump_clock")
+            now_utc = datetime.now(timezone.utc)
+            recent_status = (
+                isinstance(pump_status_time, datetime)
+                and abs((now_utc - pump_status_time.astimezone(timezone.utc)).total_seconds()) <= 1800
+            )
+            recent_clock = (
+                isinstance(pump_clock_value, datetime)
+                and abs((now_utc - pump_clock_value.astimezone(timezone.utc)).total_seconds()) <= 1800
+            )
+            self.data["pump_connected"] = bool(pump and (recent_status or recent_clock or pump_status_value))
             self.data["pump_firmware"] = _text(ext.get("Version")) or self.data.get("pump_firmware")
             self.data["pump_active_profile"] = _text(ext.get("ActiveProfile")) or self.data.get("pump_active_profile")
             self.data["pump_battery_status"] = _text(pump.get("battery", {}).get("status")) if isinstance(pump.get("battery"), dict) else self.data.get("pump_battery_status")
             self.data["pump_battery_voltage"] = _num(pump.get("battery", {}).get("voltage")) if isinstance(pump.get("battery"), dict) else self.data.get("pump_battery_voltage")
-            self.data["pump_bolusing"] = bool(pump.get("status", {}).get("bolusing")) if isinstance(pump.get("status"), dict) else self.data.get("pump_bolusing")
-            self.data["pump_suspended"] = bool(pump.get("status", {}).get("suspended")) if isinstance(pump.get("status"), dict) else self.data.get("pump_suspended")
+            parsed_bolusing = _bool(pump.get("status", {}).get("bolusing")) if isinstance(pump.get("status"), dict) else None
+            if parsed_bolusing is not None:
+                self.data["pump_bolusing"] = parsed_bolusing
+            parsed_suspended = _bool(pump.get("status", {}).get("suspended")) if isinstance(pump.get("status"), dict) else None
+            if parsed_suspended is not None:
+                self.data["pump_suspended"] = parsed_suspended
             self.data["pump_status_timestamp"] = _parse_dt(pump.get("status", {}).get("timestamp"), profile_tz) if isinstance(pump.get("status"), dict) else self.data.get("pump_status_timestamp")
-            self.data["reservoir"] = _num(ext.get("Reservoir")) if ext.get("Reservoir") is not None else _num(pump.get("reservoir"))
-            self.data["pump_battery"] = _num(pump.get("battery", {}).get("percent")) if isinstance(pump.get("battery"), dict) else _num(pump.get("battery"))
+            self.data["reservoir"] = _num(ext.get("Reservoir")) if ext.get("Reservoir") is not None else (_num(pump.get("reservoir")) if pump.get("reservoir") is not None else self.data.get("reservoir"))
+            self.data["pump_battery"] = (_num(pump.get("battery", {}).get("percent")) if isinstance(pump.get("battery"), dict) and pump.get("battery", {}).get("percent") is not None else (_num(pump.get("battery")) if pump.get("battery") is not None else self.data.get("pump_battery")))
             socket_base_basal = _num(ext.get("BaseBasalRate"))
             socket_temp_remaining = _num(ext.get("TempBasalRemaining"))
             if socket_temp_remaining is None:
@@ -700,11 +775,11 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             self.data["base_basal"] = socket_base_basal if socket_base_basal is not None else self.data.get("base_basal")
             self.data["temp_basal_rate"] = socket_temp_rate
-            self.data["temp_basal_remaining"] = socket_temp_remaining
+            self.data["temp_basal_remaining"] = socket_temp_remaining if socket_temp_remaining is not None else self.data.get("temp_basal_remaining")
             self.data["temp_basal_start"] = _parse_dt(ext.get("TempBasalStart"), profile_tz) or self.data.get("temp_basal_start")
-            self.data["last_bolus_amount"] = _num(ext.get("LastBolusAmount"))
-            self.data["last_bolus_time"] = _parse_dt(ext.get("LastBolus"), profile_tz)
-            self.data["pump_clock"] = _parse_dt(pump.get("clock"), profile_tz)
+            self.data["last_bolus_amount"] = _num(ext.get("LastBolusAmount")) if ext.get("LastBolusAmount") is not None else self.data.get("last_bolus_amount")
+            self.data["last_bolus_time"] = _parse_dt(ext.get("LastBolus"), profile_tz) or self.data.get("last_bolus_time")
+            self.data["pump_clock"] = _parse_dt(pump.get("clock"), profile_tz) or self.data.get("pump_clock")
 
         # Treatments are authoritative for age pills and last treatment.
         treatments = self.data.setdefault("treatments", [])
@@ -893,15 +968,10 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 str(d.get("app", "")).upper() == "AAPS"
                 or "aaps" in str(d.get("device", "")).lower()
             )
-            and isinstance(d.get("openaps"), dict)
+            and _has_openaps_data(d)
         ]
         if not aaps_records:
-            aaps_records = [
-                d
-                for d in devicestatus
-                if isinstance(d, dict)
-                and isinstance(d.get("openaps"), dict)
-            ]
+            aaps_records = [d for d in devicestatus if _has_openaps_data(d)]
         latest_aaps = aaps_records[0] if aaps_records else {}
 
         # Empty configuration objects are present on ordinary AAPS snapshots.
@@ -997,7 +1067,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if uploader_battery_voltage is None and uploader_data.get("batteryVoltage") is not None:
                 uploader_battery_voltage = _num(uploader_data.get("batteryVoltage"))
             if charging is None and record.get("isCharging") is not None:
-                charging = bool(record.get("isCharging"))
+                charging = _bool(record.get("isCharging"))
             if uploader_battery is not None and uploader_battery_voltage is not None and charging is not None:
                 break
 
@@ -1050,15 +1120,14 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             profile_tz = timezone.utc
         now_local = datetime.now(profile_tz)
 
-        # Nightscout profile sensitivity is mmol/L/U -> expose mg/dL/U.
-        profile_sens_raw = _schedule_value(
-            active_profile.get("sens"), now_local
+        # Nightscout profiles declare whether their glucose values are mg/dL
+        # or mmol/L. Normalize profile sensitivity to canonical mg/dL/U.
+        profile_units = _normalise_units(
+            active_profile.get("units") or profile_doc.get("units"),
+            default="mg/dl",
         )
-        profile_sens = (
-            profile_sens_raw * 18.0
-            if profile_sens_raw is not None
-            else None
-        )
+        profile_sens_raw = _schedule_value(active_profile.get("sens"), now_local)
+        profile_sens = _glucose_to_mgdl(profile_sens_raw, profile_units)
 
         # Insulin-to-carb ratio / carb ratio is g/U.
         carb_ratio = _schedule_value(
@@ -1066,7 +1135,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         dia = _num(active_profile.get("dia"))
 
-        # Profile targets are mmol/L.
+        # Profile targets use the profile's declared units. Normalize to mg/dL.
         target_value = (
             active_profile.get("target_low")
             if active_profile.get("target_low") is not None
@@ -1077,10 +1146,10 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if active_profile.get("target_high") is not None
             else active_profile.get("target")
         )
-        target_low_mmol = _schedule_value(target_value, now_local)
-        target_high_mmol = _schedule_value(target_high_value, now_local)
-        target_low = target_low_mmol * 18.0 if target_low_mmol is not None else None
-        target_high = target_high_mmol * 18.0 if target_high_mmol is not None else None
+        target_low_source = _schedule_value(target_value, now_local)
+        target_high_source = _schedule_value(target_high_value, now_local)
+        target_low = _glucose_to_mgdl(target_low_source, profile_units)
+        target_high = _glucose_to_mgdl(target_high_source, profile_units)
 
         # Prediction arrays are already mg/dL.
         pred = decision.get("pred_bgs") or {}
@@ -1148,7 +1217,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if average_pred is None:
             average_pred = average_pred_console
 
-        # AAPS configuration marks are mmol/L.
+        # AAPS overview marks follow the units explicitly published by AAPS.
+        # Normalize them once to canonical mg/dL.
         status_settings = (
             status.get("settings", {}) if isinstance(status, dict) else {}
         )
@@ -1157,19 +1227,20 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if isinstance(status_settings, dict)
             else {}
         )
-        # AAPS profile/configuration marks are stored in mmol/L. Keep the
-        # coordinator's canonical glucose representation in mg/dL so the
-        # entity layer can apply the user's selected display unit once.
-        low_mark_mmol = _num(overview_cfg.get("low_mark"))
-        high_mark_mmol = _num(overview_cfg.get("high_mark"))
-        if low_mark_mmol is None:
+        aaps_units = _normalise_units(
+            overview_cfg.get("units"),
+            default=profile_units,
+        )
+        low_mark_source = _num(overview_cfg.get("low_mark"))
+        high_mark_source = _num(overview_cfg.get("high_mark"))
+        if low_mark_source is None:
             raw_low = _num(thresholds.get("bgLow"))
-            low_mark_mmol = raw_low / 18.0 if raw_low is not None else 70 / 18.0
-        if high_mark_mmol is None:
+            low_mark_source = raw_low
+        if high_mark_source is None:
             raw_high = _num(thresholds.get("bgHigh"))
-            high_mark_mmol = raw_high / 18.0 if raw_high is not None else 180 / 18.0
-        low_mark = low_mark_mmol * 18.0 if low_mark_mmol is not None else None
-        high_mark = high_mark_mmol * 18.0 if high_mark_mmol is not None else None
+            high_mark_source = raw_high
+        low_mark = _glucose_to_mgdl(low_mark_source, aaps_units)
+        high_mark = _glucose_to_mgdl(high_mark_source, aaps_units)
 
         values_for_stats = [
             _mgdl(e.get("sgv")) for e in entries_sorted
@@ -1267,6 +1338,20 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 aaps_version = _text(candidate)
 
         pump_clock = _parse_dt(pump.get("clock"), profile_tz)
+        pump_status_timestamp = (
+            _parse_dt(pump.get("status", {}).get("timestamp"), profile_tz)
+            if isinstance(pump.get("status"), dict)
+            else None
+        )
+        now_utc = datetime.now(timezone.utc)
+        recent_pump_status = (
+            pump_status_timestamp is not None
+            and abs((now_utc - pump_status_timestamp.astimezone(timezone.utc)).total_seconds()) <= 1800
+        )
+        recent_pump_clock = (
+            pump_clock is not None
+            and abs((now_utc - pump_clock.astimezone(timezone.utc)).total_seconds()) <= 1800
+        )
 
         # DataUpdateCoordinator starts with self.data=None on the first REST
         # refresh. Use the previous cached data only when it actually exists.
@@ -1367,17 +1452,27 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if pump_battery is None:
             pump_battery = _num(pump_ext.get("battery"))
 
-        closed_loop = "closed loop" in str(
-            pump.get("status", "")
-        ).lower()
+        pump_status_text = (
+            _text(pump.get("status", {}).get("status"))
+            if isinstance(pump.get("status"), dict)
+            else _text(pump.get("status"))
+        )
+        closed_loop = pump_status_text is not None and pump_status_text.casefold() == "closed loop"
 
         # Prefer AAPS' explicit received/enacted flag. Do not infer delivery
         # merely from the presence of an OpenAPS suggestion.
         delivery_received = decision.get("received")
-        dynamic_isf = bool(aps_cfg.get("use_dynamic_sensitivity"))
+        dynamic_isf = _bool(aps_cfg.get("use_dynamic_sensitivity")) or False
+        explicit_smb = _bool(
+            aps_cfg.get("enableSMB")
+            or aps_cfg.get("enableSMB_always")
+            or aps_cfg.get("enableSMB_with_COB")
+            or aps_cfg.get("enableSMB_after_carbs")
+        )
         smb_enabled = (
-            str(decision.get("algorithm") or "").upper() == "SMB"
-            or decision.get("smb") is not None
+            explicit_smb
+            if explicit_smb is not None
+            else str(decision.get("algorithm") or "").upper() == "SMB"
         )
 
         # Seed change-event history from the REST treatment bootstrap. Socket.IO
@@ -1524,6 +1619,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Active Nightscout profile.
             "profile_name": default_profile,
             "profile_timezone": _profile_timezone_name(profile_tz),
+            "profile_units": profile_units,
+            "aaps_units": aaps_units,
             "profile_tz": profile_tz,
             "profile_sens": profile_sens,
             "dia": dia,
@@ -1533,7 +1630,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Pump.
             "pump_status": pump_status,
-            "pump_connected": bool(pump),
+            "pump_connected": bool(pump and (recent_pump_status or recent_pump_clock)),
             "pump_clock": pump_clock,
             "pump_firmware": _text(pump_ext.get("Version")),
             "pump_manufacturer": _text(pump.get("manufacturer") or pump.get("Manufacturer")),
@@ -1542,9 +1639,9 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "pump_active_profile": _text(pump_ext.get("ActiveProfile")),
             "pump_battery_status": _text(pump.get("battery", {}).get("status")) if isinstance(pump.get("battery"), dict) else None,
             "pump_battery_voltage": _num(pump.get("battery", {}).get("voltage")) if isinstance(pump.get("battery"), dict) else None,
-            "pump_bolusing": bool(pump.get("status", {}).get("bolusing")) if isinstance(pump.get("status"), dict) else None,
-            "pump_suspended": bool(pump.get("status", {}).get("suspended")) if isinstance(pump.get("status"), dict) else None,
-            "pump_status_timestamp": _parse_dt(pump.get("status", {}).get("timestamp"), profile_tz) if isinstance(pump.get("status"), dict) else None,
+            "pump_bolusing": _bool(pump.get("status", {}).get("bolusing")) if isinstance(pump.get("status"), dict) else None,
+            "pump_suspended": _bool(pump.get("status", {}).get("suspended")) if isinstance(pump.get("status"), dict) else None,
+            "pump_status_timestamp": pump_status_timestamp,
             "reservoir": reservoir,
             "pump_battery": pump_battery,
             "base_basal": base_basal,
