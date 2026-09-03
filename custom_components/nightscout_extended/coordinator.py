@@ -6,10 +6,12 @@ import math
 import re
 from typing import Any
 import json
+import hashlib
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import aiohttp
+import socketio
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -289,6 +291,14 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._socket_task: asyncio.Task | None = None
         self._socket_connected = False
         self._socket_last_error: str | None = None
+        self._socket_stop = asyncio.Event()
+        self._socket_client = socketio.AsyncClient(
+            reconnection=False,
+            logger=False,
+            engineio_logger=False,
+        )
+        self._socket_alarm_subscribed = False
+        self._register_socket_handlers()
 
         super().__init__(
             hass,
@@ -297,8 +307,259 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
 
+    def _socket_auth(self) -> tuple[str | None, str | None]:
+        """Return the Socket.IO auth values expected by Nightscout.
+
+        Nightscout's web client sends a SHA-1 API-secret hash in ``secret``.
+        JWTs are sent as ``token`` instead. This mirrors the captured web
+        client behaviour.
+        """
+        value = (self.api_key or "").strip()
+        if not value:
+            return None, None
+        if value.count(".") == 2:
+            return None, value
+        return hashlib.sha1(value.encode("utf-8")).hexdigest(), None
+
+    def _register_socket_handlers(self) -> None:
+        @self._socket_client.event
+        async def connect():
+            self._socket_connected = True
+            self._socket_last_error = None
+            _LOGGER.info("Nightscout Socket.IO connected")
+            if not self.data:
+                self.async_set_updated_data({})
+
+        @self._socket_client.event
+        async def disconnect():
+            self._socket_connected = False
+            self._socket_alarm_subscribed = False
+            _LOGGER.warning("Nightscout Socket.IO disconnected")
+
+        @self._socket_client.on("connected", namespace="/")
+        async def connected_event(*args):
+            self._socket_connected = True
+
+        @self._socket_client.on("dataUpdate", namespace="/")
+        async def data_update(payload=None):
+            if isinstance(payload, dict):
+                self._apply_socket_payload(payload)
+
+        @self._socket_client.on("retroUpdate", namespace="/")
+        async def retro_update(payload=None):
+            if isinstance(payload, dict):
+                self._apply_socket_payload(payload)
+
+        @self._socket_client.on("connect", namespace="/alarm")
+        async def alarm_connect():
+            secret, token = self._socket_auth()
+            try:
+                result = await self._socket_client.call(
+                    "subscribe",
+                    {"secret": secret, "jwtToken": token},
+                    namespace="/alarm",
+                    timeout=15,
+                )
+                self._socket_alarm_subscribed = bool(
+                    isinstance(result, dict) and result.get("success")
+                )
+                _LOGGER.debug("Nightscout alarm subscription: %s", result)
+            except Exception as err:
+                _LOGGER.warning("Nightscout alarm subscription failed: %s", err)
+
+        @self._socket_client.on("notification", namespace="/alarm")
+        async def alarm_notification(payload=None):
+            if not isinstance(payload, dict) or not self.data:
+                return
+            self.data["last_alarm"] = payload
+            self.data["last_alarm_title"] = _text(payload.get("title"))
+            self.data["last_alarm_message"] = _text(payload.get("message"))
+            self.data["last_alarm_level"] = payload.get("level")
+            self.async_set_updated_data(self.data)
+
+    def _apply_socket_payload(self, payload: dict[str, Any]) -> None:
+        """Apply live Socket.IO records to the cached HA data."""
+        if not isinstance(self.data, dict):
+            return
+
+        self.data["socket_last_update"] = _parse_dt(payload.get("lastUpdated"))
+        self.data["socket_last_event"] = "dataUpdate"
+
+        # Glucose records: retain a bounded history for delta and live values.
+        entries = self.data.setdefault("entries", [])
+        if not isinstance(entries, list):
+            entries = []
+            self.data["entries"] = entries
+        by_id = {str(x.get("_id")): x for x in entries if isinstance(x, dict) and x.get("_id")}
+        for item in payload.get("sgvs") or []:
+            if isinstance(item, dict):
+                key = str(item.get("_id") or item.get("mills") or item.get("date"))
+                if key:
+                    by_id[key] = item
+        merged_entries = list(by_id.values())
+        merged_entries.sort(key=lambda x: _parse_dt(x.get("dateString") or x.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc))
+        self.data["entries"] = merged_entries[-max(self.entries_count, 288):]
+        latest_entry = self.data["entries"][-1] if self.data["entries"] else {}
+        previous_entry = self.data["entries"][-2] if len(self.data["entries"]) > 1 else {}
+        bg = _mgdl(latest_entry.get("mgdl") or latest_entry.get("sgv"))
+        previous_bg = _mgdl(previous_entry.get("mgdl") or previous_entry.get("sgv"))
+        self.data["bg"] = bg
+        self.data["delta"] = (
+            bg - previous_bg if bg is not None and previous_bg is not None else self.data.get("delta")
+        )
+        self.data["direction"] = _text(latest_entry.get("direction")) or self.data.get("direction")
+        self.data["latest_entry"] = latest_entry
+        self.data["entry_time"] = _parse_dt(latest_entry.get("dateString") or latest_entry.get("created_at"))
+        if self.data["entry_time"]:
+            self.data["glucose_age"] = max(0.0, (datetime.now(timezone.utc) - self.data["entry_time"]).total_seconds())
+
+        # AAPS device status is the live source for loop/pump values.
+        statuses = self.data.setdefault("devicestatus_records", [])
+        if not isinstance(statuses, list):
+            statuses = []
+            self.data["devicestatus_records"] = statuses
+        by_id = {str(x.get("_id")): x for x in statuses if isinstance(x, dict) and x.get("_id")}
+        for item in payload.get("devicestatus") or []:
+            if isinstance(item, dict):
+                key = str(item.get("_id") or item.get("mills") or item.get("date"))
+                if key:
+                    by_id[key] = item
+        statuses = list(by_id.values())
+        statuses.sort(key=lambda x: _parse_dt(x.get("date") or x.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc))
+        self.data["devicestatus_records"] = statuses[-100:]
+        aaps_records = [
+            x for x in statuses
+            if isinstance(x, dict)
+            and (str(x.get("app", "")).upper() == "AAPS" or "aaps" in str(x.get("device", "")).lower())
+            and isinstance(x.get("openaps"), dict)
+        ]
+        if not aaps_records:
+            aaps_records = [x for x in statuses if isinstance(x, dict) and isinstance(x.get("openaps"), dict)]
+        if aaps_records:
+            latest_aaps = max(aaps_records, key=lambda x: _parse_dt(x.get("date") or x.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc))
+            self.data["devicestatus"] = latest_aaps
+            decision = _decision(latest_aaps)
+            self.data["decision"] = decision
+            for target, source in {
+                "iob": "iob", "cob": "cob", "eventual_bg": "eventual_bg",
+                "target_bg": "target_bg", "insulin_required": "insulin_required",
+                "sensitivity_ratio": "sensitivity_ratio", "variable_sens": "variable_sens",
+                "requested_rate": "rate", "requested_duration": "duration", "smb_amount": "smb",
+            }.items():
+                self.data[target] = decision.get(source)
+            self.data["algorithm"] = _text(decision.get("algorithm"))
+            self.data["decision_reason"] = decision.get("reason")
+            self.data["dynamic_isf"] = bool(latest_aaps.get("configuration", {}).get("apsConfiguration", {}).get("use_dynamic_sensitivity", self.data.get("dynamic_isf")))
+            self.data["delivery_received"] = bool(latest_aaps.get("openaps", {}).get("enacted") or latest_aaps.get("openaps", {}).get("suggested"))
+            self.data["aaps_device"] = _text(latest_aaps.get("device")) or self.data.get("aaps_device")
+            if latest_aaps.get("uploaderBattery") is not None:
+                self.data["uploader_battery"] = _num(latest_aaps.get("uploaderBattery"))
+            if latest_aaps.get("isCharging") is not None:
+                self.data["charging"] = latest_aaps.get("isCharging")
+
+            pump = latest_aaps.get("pump") if isinstance(latest_aaps.get("pump"), dict) else {}
+            ext = pump.get("extended") if isinstance(pump.get("extended"), dict) else {}
+            self.data["pump_status"] = _text(pump.get("status")) if not isinstance(pump.get("status"), dict) else _text(pump.get("status", {}).get("status"))
+            self.data["pump_connected"] = bool(pump)
+            self.data["pump_firmware"] = _text(ext.get("Version")) or self.data.get("pump_firmware")
+            self.data["reservoir"] = _num(ext.get("Reservoir")) if ext.get("Reservoir") is not None else _num(pump.get("reservoir"))
+            self.data["pump_battery"] = _num(pump.get("battery", {}).get("percent")) if isinstance(pump.get("battery"), dict) else _num(pump.get("battery"))
+            self.data["base_basal"] = _num(ext.get("BaseBasalRate"))
+            self.data["temp_basal_rate"] = _num(ext.get("TempBasalAbsoluteRate"))
+            self.data["temp_basal_remaining"] = _num(ext.get("TempBasalRemaining"))
+            self.data["temp_basal_start"] = _parse_dt(ext.get("TempBasalStart"))
+            self.data["last_bolus_amount"] = _num(ext.get("LastBolusAmount"))
+            self.data["last_bolus_time"] = _parse_dt(ext.get("LastBolus"))
+            self.data["pump_clock"] = _parse_dt(pump.get("clock"))
+
+        # Treatments are authoritative for age pills and last treatment.
+        treatments = self.data.setdefault("treatments", [])
+        if not isinstance(treatments, list):
+            treatments = []
+        by_id = {str(x.get("_id")): x for x in treatments if isinstance(x, dict) and x.get("_id")}
+        for item in payload.get("treatments") or []:
+            if not isinstance(item, dict) or not item.get("_id"):
+                continue
+            key = str(item["_id"])
+            if item.get("action") == "remove":
+                by_id.pop(key, None)
+            else:
+                by_id[key] = item
+        treatments = list(by_id.values())
+        treatments.sort(key=lambda x: _event_datetime(x) or datetime.min.replace(tzinfo=timezone.utc))
+        self.data["treatments"] = treatments[-1000:]
+        self.data["treatment_count"] = len(treatments)
+
+        # Recalculate the four Nightscout age values from the live treatment cache.
+        changes = _extract_change_events({"treatments": treatments})
+        mapping = {
+            "cannula": ("cannula_age", "last_cannula_change", "cage_warning", "cage_critical"),
+            "sensor": ("sensor_age", "last_sensor_change", "sage_warning", "sage_critical"),
+            "insulin": ("insulin_age", "last_insulin_change", "iage_warning", "iage_critical"),
+            "battery": ("battery_age", "last_battery_change", "bage_warning", "bage_critical"),
+        }
+        now = datetime.now(timezone.utc)
+        for kind, (age_key, timestamp_key, _, _) in mapping.items():
+            event = changes.get(kind)
+            if event:
+                self.data[timestamp_key] = event["timestamp"]
+                self.data[age_key] = max(0.0, (now - event["timestamp"]).total_seconds() / 3600)
+                self.data[f"{age_key}_event_type"] = event["event_type"]
+
+        self.data["socket_connected"] = self._socket_connected
+        self.async_set_updated_data(self.data)
+
+    async def _socketio_loop(self) -> None:
+        """Maintain a Socket.IO connection alongside REST polling."""
+        delay = 2
+        while not self._socket_stop.is_set():
+            try:
+                secret, token = self._socket_auth()
+                await self._socket_client.connect(
+                    self.base_url,
+                    socketio_path="socket.io",
+                    namespaces=["/", "/alarm"],
+                    transports=["polling", "websocket"],
+                    wait_timeout=15,
+                    headers={"User-Agent": "Home Assistant Nightscout Extended"},
+                )
+                result = await self._socket_client.call(
+                    "authorize",
+                    {
+                        "client": "web",
+                        "secret": secret,
+                        "token": token,
+                        "history": 48,
+                    },
+                    namespace="/",
+                    timeout=15,
+                )
+                if not isinstance(result, dict) or not result.get("read"):
+                    raise RuntimeError("Nightscout Socket.IO authorization failed")
+                delay = 2
+                while self._socket_client.connected and not self._socket_stop.is_set():
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                self._socket_connected = False
+                self._socket_last_error = str(err)
+                _LOGGER.warning("Nightscout Socket.IO error: %s", err)
+                self.async_set_updated_data(self.data or {})
+            finally:
+                if self._socket_client.connected:
+                    try:
+                        await self._socket_client.disconnect()
+                    except Exception:
+                        pass
+                self._socket_connected = False
+            if not self._socket_stop.is_set():
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 60)
+
     async def async_start_socketio(self) -> None:
         """Start the Nightscout Socket.IO listener."""
+        self._socket_stop.clear()
         if self._socket_task is None or self._socket_task.done():
             self._socket_task = self.hass.async_create_task(
                 self._socketio_loop(), name="nightscout_extended_socketio"
@@ -306,6 +567,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_stop_socketio(self) -> None:
         """Stop the Nightscout Socket.IO listener."""
+        self._socket_stop.set()
         if self._socket_task is not None:
             self._socket_task.cancel()
             try:
@@ -313,85 +575,12 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except asyncio.CancelledError:
                 pass
             self._socket_task = None
-        self._socket_connected = False
-
-    def _apply_socket_events(self) -> None:
-        if not self.data:
-            return
-        now = datetime.now(timezone.utc)
-        mapping = {
-            "cannula": ("cannula_age", "last_cannula_change"),
-            "sensor": ("sensor_age", "last_sensor_change"),
-            "insulin": ("insulin_age", "last_insulin_change"),
-            "battery": ("battery_age", "last_battery_change"),
-        }
-        for kind, (age_key, timestamp_key) in mapping.items():
-            event = self._change_events.get(kind)
-            if not event:
-                continue
-            timestamp = event["timestamp"]
-            self.data[timestamp_key] = timestamp
-            self.data[age_key] = max(0.0, (now - timestamp).total_seconds() / 3600)
-            self.data[f"{age_key}_event_type"] = event["event_type"]
-
-    async def _socketio_loop(self) -> None:
-        """Listen for Nightscout Engine.IO/Socket.IO dataUpdate messages."""
-        parsed = urlparse(self.base_url)
-        scheme = "wss" if parsed.scheme == "https" else "ws"
-        path = parsed.path.rstrip("/") + "/socket.io/"
-        if not path.startswith("/"):
-            path = "/" + path
-        url = f"{scheme}://{parsed.netloc}{path}"
-
-        while True:
+        if self._socket_client.connected:
             try:
-                async with self.session.ws_connect(
-                    url,
-                    params={"EIO": "4", "transport": "websocket"},
-                    heartbeat=20,
-                    timeout=None,
-                    headers={"User-Agent": "Home Assistant Nightscout Extended"},
-                ) as ws:
-                    self._socket_connected = True
-                    self._socket_last_error = None
-                    async for msg in ws:
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            packet = msg.data
-                            if packet == "2":
-                                await ws.send_str("3")
-                                continue
-                            if packet.startswith("2") and not packet.startswith("20"):
-                                await ws.send_str("3")
-                                continue
-                            if packet.startswith("42"):
-                                try:
-                                    event_packet = json.loads(packet[2:])
-                                except (TypeError, ValueError):
-                                    continue
-                                if (
-                                    isinstance(event_packet, list)
-                                    and len(event_packet) >= 2
-                                    and event_packet[0] in {"dataUpdate", "retroUpdate"}
-                                ):
-                                    events = _extract_change_events(event_packet[1])
-                                    changed = False
-                                    for kind, event in events.items():
-                                        old = self._change_events.get(kind)
-                                        if old is None or event["timestamp"] > old["timestamp"]:
-                                            self._change_events[kind] = event
-                                            changed = True
-                                    if changed:
-                                        self._apply_socket_events()
-                                        self.async_set_updated_data(self.data)
-                        elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
-                            break
-            except asyncio.CancelledError:
-                raise
-            except Exception as err:  # reconnect loop; REST remains independent
-                self._socket_last_error = str(err)
-            finally:
-                self._socket_connected = False
-            await asyncio.sleep(30)
+                await self._socket_client.disconnect()
+            except Exception:
+                pass
+        self._socket_connected = False
 
     async def _get_json(
         self, path: str, params: dict[str, Any] | None = None
@@ -887,6 +1076,13 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or decision.get("smb") is not None
         )
 
+        # Seed change-event history from the REST treatment bootstrap. Socket.IO
+        # then keeps these values current between REST refreshes.
+        rest_changes = _extract_change_events(treatments)
+        now = datetime.now(timezone.utc)
+        for kind, event in rest_changes.items():
+            self._change_events[kind] = event
+
         data = {
             "status": status,
             "devicestatus": latest_aaps,
@@ -1045,6 +1241,9 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "isf_unit": self.isf_unit,
             "entry_count": len(entries_sorted),
             "treatment_count": len(treatments),
+            "last_treatment": treatments[-1] if treatments else None,
+            "socket_connected": self._socket_connected,
+            "socket_last_error": self._socket_last_error,
             "glucose_age": (
                 (datetime.now(timezone.utc) - entry_time).total_seconds()
                 if entry_time
@@ -1052,6 +1251,10 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
         }
         self.data = data
+        self.data["devicestatus_records"] = [d for d in devicestatus if isinstance(d, dict)]
+        self.data["socket_connected"] = self._socket_connected
+        self.data["socket_last_error"] = self._socket_last_error
+        self.data["last_alarm"] = self.data.get("last_alarm")
         self._apply_socket_events()
         return data
 

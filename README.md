@@ -3,7 +3,7 @@
 Home Assistant custom integration for read-only monitoring of Nightscout data, including glucose, AAPS status, pump status, treatment statistics, predictions, profile data and configuration.
 
 ## Version
-0.8.4
+1.0.0
 
 ## Nightscout endpoints
 - `/api/v1/status.json`
@@ -35,3 +35,19 @@ The integration Options flow lets you choose mmol/L or mg/dL for preferred gluco
 ### CAGE / SAGE / IAGE / BAGE
 
 Version 0.8.6 listens to the Nightscout Socket.IO dataUpdate/retroUpdate stream and uses the latest valid Site Change, Sensor Change/Sensor Start, Insulin Change, and Pump Battery Change events for device-age sensors.
+
+
+## REST + Socket.IO
+
+Version 1.0.0 combines the REST API implementation with the Nightscout Socket.IO
+live stream. REST provides initial/full state and periodic fallback; Socket.IO
+provides live `dataUpdate`, `retroUpdate`, and `/alarm` notification events.
+
+API secrets are SHA-1 hashed for the Socket.IO `secret` field, matching the
+Nightscout web client. JWT-like tokens are sent as `token`.
+
+The integration is read-only and does not send pump or treatment commands.
+
+Live Socket.IO data includes glucose, AAPS device status, treatment
+create/update/remove events, retro updates, alarm notifications, and
+SAGE/BAGE/CAGE/IAGE age tracking.

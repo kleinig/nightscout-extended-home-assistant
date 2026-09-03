@@ -22,6 +22,7 @@ BINARY_SENSORS = [
     ("smb_enabled", "SMB Enabled"),
     ("delivery_received", "AAPS Delivery Received"),
     ("pump_connected", "Pump Connected"),
+    ("socket_connected", "Socket Connected"),
     ("glucose_stale", "Glucose Data Stale"),
     ("glucose_low", "Glucose Low"),
     ("glucose_high", "Glucose High"),
@@ -52,6 +53,8 @@ def _is_on(data, key):
         return bool(data.get("delivery_received"))
     if key == "pump_connected":
         return bool(data.get("pump_connected"))
+    if key == "socket_connected":
+        return bool(data.get("socket_connected"))
     if key == "glucose_stale":
         return (data.get("glucose_age") or 0) > 600
     if key == "glucose_low":
