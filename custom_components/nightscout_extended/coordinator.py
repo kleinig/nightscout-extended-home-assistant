@@ -561,8 +561,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Start the Nightscout Socket.IO listener."""
         self._socket_stop.clear()
         if self._socket_task is None or self._socket_task.done():
-            self._socket_task = self.hass.async_create_task(
-                self._socketio_loop(), name="nightscout_extended_socketio"
+            self._socket_task = self.entry.async_create_background_task(
+                self.hass, self._socketio_loop(), name="nightscout_extended_socketio"
             )
 
     async def async_stop_socketio(self) -> None:
