@@ -19,9 +19,12 @@ DEVICE = DeviceInfo(
 BINARY_SENSORS = [
     ("phone_charging", "AAPS Phone Charging"),
     ("dynamic_isf", "Dynamic ISF Active"),
+    ("aaps_dynamic_isf_running", "AAPS Dynamic ISF Running"),
     ("smb_enabled", "SMB Enabled"),
     ("delivery_received", "AAPS Delivery Received"),
     ("pump_connected", "Pump Connected"),
+    ("pump_bolusing", "Pump Bolusing"),
+    ("pump_suspended", "Pump Suspended"),
     ("socket_connected", "Socket Connected"),
     ("glucose_stale", "Glucose Data Stale"),
     ("glucose_low", "Glucose Low"),
@@ -47,12 +50,19 @@ def _is_on(data, key):
         return bool(data.get("charging"))
     if key == "dynamic_isf":
         return bool(data.get("dynamic_isf"))
+    if key == "aaps_dynamic_isf_running":
+        value = data.get("suggested_running_dynamic_isf")
+        return bool(data.get("dynamic_isf")) if value is None else bool(value)
     if key == "smb_enabled":
         return bool(data.get("smb_enabled"))
     if key == "delivery_received":
         return bool(data.get("delivery_received"))
     if key == "pump_connected":
         return bool(data.get("pump_connected"))
+    if key == "pump_bolusing":
+        return bool(data.get("pump_bolusing"))
+    if key == "pump_suspended":
+        return bool(data.get("pump_suspended"))
     if key == "socket_connected":
         return bool(data.get("socket_connected"))
     if key == "glucose_stale":

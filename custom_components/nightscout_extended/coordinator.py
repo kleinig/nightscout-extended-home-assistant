@@ -243,17 +243,23 @@ def _decision(aaps: dict[str, Any]) -> dict[str, Any]:
         "algorithm": _text(source.get("algorithm")),
         "timestamp": _text(source.get("timestamp")),
         "bg": _mgdl(source.get("bg")),
-        "delta": _num(source.get("delta")),  # mg/dL, never heuristic-converted
+        "delta": _num(source.get("delta")),
         "eventual_bg": _mgdl(source.get("eventualBG")),
         "target_bg": _mgdl(source.get("targetBG")),
         "insulin_required": _num(source.get("insulinReq")),
         "sensitivity_ratio": _num(source.get("sensitivityRatio")),
-        "variable_sens": _num(source.get("variable_sens")),  # mg/dL/U
+        "variable_sens": _num(source.get("variable_sens")),
         "iob": _num(source.get("IOB")),
         "cob": _num(source.get("COB")),
+        "snooze_bg": _mgdl(source.get("snoozeBG")),
+        "tick": _num(source.get("tick")),
+        "temp": _text(source.get("temp")),
+        "reservoir": _num(source.get("reservoir")),
+        "deliver_at": _parse_dt(source.get("deliverAt")),
         "rate": requested_number("rate"),
         "duration": requested_number("duration"),
         "smb": requested_number("smb"),
+        "received": source.get("received", source.get("recieved")),
         "reason": _text(source.get("reason")),
         "console_log": _text(source.get("consoleLog")),
         "console_error": _text(source.get("consoleError")),
@@ -478,13 +484,77 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.data["devicestatus"] = latest_aaps
             decision = _decision(latest_aaps)
             self.data["decision"] = decision
+            openaps = latest_aaps.get("openaps", {}) if isinstance(latest_aaps.get("openaps"), dict) else {}
+            suggested = openaps.get("suggested", {}) if isinstance(openaps.get("suggested"), dict) else {}
+            enacted = openaps.get("enacted", {}) if isinstance(openaps.get("enacted"), dict) else {}
+            iob_record = openaps.get("iob", {})
+            if isinstance(iob_record, list):
+                iob_record = iob_record[0] if iob_record else {}
+            if not isinstance(iob_record, dict):
+                iob_record = {}
+            self.data.update({
+                "suggested_bg": _mgdl(suggested.get("bg")),
+                "suggested_snooze_bg": _mgdl(suggested.get("snoozeBG")),
+                "suggested_tick": _num(suggested.get("tick")),
+                "suggested_temp": _text(suggested.get("temp")),
+                "suggested_min_pred_bg": _mgdl(suggested.get("minPredBG")),
+                "suggested_rate": _num(suggested.get("rate")),
+                "suggested_duration": _num(suggested.get("duration")),
+                "suggested_deliver_at": _parse_dt(suggested.get("deliverAt")),
+                "suggested_timestamp": _parse_dt(suggested.get("timestamp")),
+                "suggested_insulin_required": _num(suggested.get("insulinReq")),
+                "suggested_target_bg": _mgdl(suggested.get("targetBG")),
+                "suggested_sensitivity_ratio": _num(suggested.get("sensitivityRatio")),
+                "suggested_variable_sens": _num(suggested.get("variable_sens")),
+                "suggested_algorithm": _text(suggested.get("algorithm")),
+                "suggested_running_dynamic_isf": suggested.get("runningDynamicIsf"),
+                "suggested_reservoir": _num(suggested.get("reservoir")),
+                "suggested_smb": _num(suggested.get("smb")),
+                "suggested_received": suggested.get("received", suggested.get("recieved")),
+                "suggested_pred_bgs": suggested.get("predBGs") if isinstance(suggested.get("predBGs"), dict) else {},
+                "enacted_bg": _mgdl(enacted.get("bg")),
+                "enacted_snooze_bg": _mgdl(enacted.get("snoozeBG")),
+                "enacted_tick": _num(enacted.get("tick")),
+                "enacted_temp": _text(enacted.get("temp")),
+                "enacted_min_pred_bg": _mgdl(enacted.get("minPredBG")),
+                "enacted_rate": _num(enacted.get("rate")),
+                "enacted_duration": _num(enacted.get("duration")),
+                "enacted_deliver_at": _parse_dt(enacted.get("deliverAt")),
+                "enacted_timestamp": _parse_dt(enacted.get("timestamp")),
+                "enacted_insulin_required": _num(enacted.get("insulinReq")),
+                "enacted_target_bg": _mgdl(enacted.get("targetBG")),
+                "enacted_sensitivity_ratio": _num(enacted.get("sensitivityRatio")),
+                "enacted_variable_sens": _num(enacted.get("variable_sens")),
+                "enacted_received": enacted.get("received", enacted.get("recieved")),
+                "enacted_pred_bgs": enacted.get("predBGs") if isinstance(enacted.get("predBGs"), dict) else {},
+                "iob": _num(iob_record.get("iob")) if _num(iob_record.get("iob")) is not None else decision.get("iob"),
+                "basal_iob": _num(iob_record.get("basaliob")),
+                "bolus_iob": _num(iob_record.get("bolusiob")),
+                "insulin_activity": _num(iob_record.get("activity")),
+                "bolus_snooze": _num(iob_record.get("bolussnooze")),
+                "net_basal_insulin": _num(iob_record.get("netbasalinsulin")),
+                "high_temp_insulin": _num(iob_record.get("hightempinsulin")),
+                "microbolus_insulin": _num(iob_record.get("microBolusInsulin")),
+                "microbolus_iob": _num(iob_record.get("microBolusIOB")),
+                "iob_last_bolus_time": _parse_dt(iob_record.get("lastBolusTime")),
+                "iob_timestamp": _parse_dt(iob_record.get("timestamp") or iob_record.get("time")),
+            })
             for target, source in {
+                "snooze_bg": "snooze_bg",
+                "aaps_tick": "tick",
+                "aaps_temp": "temp",
+                "aaps_reservoir": "reservoir",
+                "aaps_delivery_time": "deliver_at",
+                "aaps_suggestion_time": "timestamp",
                 "iob": "iob", "cob": "cob", "eventual_bg": "eventual_bg",
                 "target_bg": "target_bg", "insulin_required": "insulin_required",
                 "sensitivity_ratio": "sensitivity_ratio", "variable_sens": "variable_sens",
                 "requested_rate": "rate", "requested_duration": "duration", "smb_amount": "smb",
             }.items():
-                self.data[target] = decision.get(source)
+                value = decision.get(source)
+                if target in {"aaps_delivery_time", "aaps_suggestion_time"}:
+                    value = _parse_dt(value)
+                self.data[target] = value
             self.data["algorithm"] = _text(decision.get("algorithm"))
             self.data["decision_reason"] = decision.get("reason")
             self.data["decision_state"] = _decision_state(decision)
@@ -493,6 +563,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.data["aaps_device"] = _text(latest_aaps.get("device")) or self.data.get("aaps_device")
             if latest_aaps.get("uploaderBattery") is not None:
                 self.data["uploader_battery"] = _num(latest_aaps.get("uploaderBattery"))
+            if isinstance(latest_aaps.get("uploader"), dict) and latest_aaps["uploader"].get("batteryVoltage") is not None:
+                self.data["uploader_battery_voltage"] = _num(latest_aaps["uploader"].get("batteryVoltage"))
             if latest_aaps.get("isCharging") is not None:
                 self.data["charging"] = latest_aaps.get("isCharging")
 
@@ -501,6 +573,12 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.data["pump_status"] = _text(pump.get("status")) if not isinstance(pump.get("status"), dict) else _text(pump.get("status", {}).get("status"))
             self.data["pump_connected"] = bool(pump)
             self.data["pump_firmware"] = _text(ext.get("Version")) or self.data.get("pump_firmware")
+            self.data["pump_active_profile"] = _text(ext.get("ActiveProfile")) or self.data.get("pump_active_profile")
+            self.data["pump_battery_status"] = _text(pump.get("battery", {}).get("status")) if isinstance(pump.get("battery"), dict) else self.data.get("pump_battery_status")
+            self.data["pump_battery_voltage"] = _num(pump.get("battery", {}).get("voltage")) if isinstance(pump.get("battery"), dict) else self.data.get("pump_battery_voltage")
+            self.data["pump_bolusing"] = bool(pump.get("status", {}).get("bolusing")) if isinstance(pump.get("status"), dict) else self.data.get("pump_bolusing")
+            self.data["pump_suspended"] = bool(pump.get("status", {}).get("suspended")) if isinstance(pump.get("status"), dict) else self.data.get("pump_suspended")
+            self.data["pump_status_timestamp"] = _parse_dt(pump.get("status", {}).get("timestamp")) if isinstance(pump.get("status"), dict) else self.data.get("pump_status_timestamp")
             self.data["reservoir"] = _num(ext.get("Reservoir")) if ext.get("Reservoir") is not None else _num(pump.get("reservoir"))
             self.data["pump_battery"] = _num(pump.get("battery", {}).get("percent")) if isinstance(pump.get("battery"), dict) else _num(pump.get("battery"))
             self.data["base_basal"] = _num(ext.get("BaseBasalRate"))
@@ -759,6 +837,14 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if isinstance(pump.get("extended"), dict)
             else {}
         )
+        openaps = latest_aaps.get("openaps", {}) if isinstance(latest_aaps.get("openaps"), dict) else {}
+        suggested = openaps.get("suggested", {}) if isinstance(openaps.get("suggested"), dict) else {}
+        enacted = openaps.get("enacted", {}) if isinstance(openaps.get("enacted"), dict) else {}
+        iob_record = openaps.get("iob", {})
+        if isinstance(iob_record, list):
+            iob_record = iob_record[0] if iob_record else {}
+        if not isinstance(iob_record, dict):
+            iob_record = {}
 
         uploader_battery = _num(latest_aaps.get("uploaderBattery"))
         charging = latest_aaps.get("isCharging")
@@ -1029,6 +1115,20 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         pump_clock = _parse_dt(pump.get("clock"), profile_tz)
 
+        # Raw OpenAPS/AAPS IOB fields. These are preferred over values repeated
+        # in suggested/enacted because openaps.iob is the authoritative IOB record.
+        raw_iob = _num(iob_record.get("iob"))
+        basal_iob = _num(iob_record.get("basaliob"))
+        bolus_iob = _num(iob_record.get("bolusiob"))
+        insulin_activity = _num(iob_record.get("activity"))
+        bolus_snooze = _num(iob_record.get("bolussnooze"))
+        net_basal_insulin = _num(iob_record.get("netbasalinsulin"))
+        high_temp_insulin = _num(iob_record.get("hightempinsulin"))
+        microbolus_insulin = _num(iob_record.get("microBolusInsulin"))
+        microbolus_iob = _num(iob_record.get("microBolusIOB"))
+        iob_last_bolus_time = _parse_dt(iob_record.get("lastBolusTime"))
+        iob_timestamp = _parse_dt(iob_record.get("timestamp") or iob_record.get("time"))
+
         pump_status_raw = pump.get("status")
         if isinstance(pump_status_raw, dict):
             pump_status = _text(pump_status_raw.get("status"))
@@ -1173,6 +1273,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "aaps_version": _text(aaps_version),
             "aaps_device": _text(latest_aaps.get("device")),
             "uploader_battery": uploader_battery,
+            "uploader_battery_voltage": _num(latest_aaps.get("uploader", {}).get("batteryVoltage")) if isinstance(latest_aaps.get("uploader"), dict) else None,
             "charging": charging,
 
             # Active Nightscout profile.
@@ -1188,6 +1289,12 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "pump_connected": bool(pump),
             "pump_clock": pump_clock,
             "pump_firmware": _text(pump_ext.get("Version")),
+            "pump_active_profile": _text(pump_ext.get("ActiveProfile")),
+            "pump_battery_status": _text(pump.get("battery", {}).get("status")) if isinstance(pump.get("battery"), dict) else None,
+            "pump_battery_voltage": _num(pump.get("battery", {}).get("voltage")) if isinstance(pump.get("battery"), dict) else None,
+            "pump_bolusing": bool(pump.get("status", {}).get("bolusing")) if isinstance(pump.get("status"), dict) else None,
+            "pump_suspended": bool(pump.get("status", {}).get("suspended")) if isinstance(pump.get("status"), dict) else None,
+            "pump_status_timestamp": _parse_dt(pump.get("status", {}).get("timestamp")) if isinstance(pump.get("status"), dict) else None,
             "reservoir": reservoir,
             "pump_battery": pump_battery,
             "base_basal": _num(pump_ext.get("BaseBasalRate")),
@@ -1197,9 +1304,61 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_bolus_amount": last_bolus_amount,
             "last_bolus_time": last_bolus_time,
 
+            # Raw AAPS/OpenAPS suggested/enacted values.
+            "suggested_bg": _mgdl(suggested.get("bg")),
+            "suggested_snooze_bg": _mgdl(suggested.get("snoozeBG")),
+            "suggested_tick": _num(suggested.get("tick")),
+            "suggested_temp": _text(suggested.get("temp")),
+            "suggested_min_pred_bg": _mgdl(suggested.get("minPredBG")),
+            "suggested_rate": _num(suggested.get("rate")),
+            "suggested_duration": _num(suggested.get("duration")),
+            "suggested_deliver_at": _parse_dt(suggested.get("deliverAt")),
+            "suggested_timestamp": _parse_dt(suggested.get("timestamp")),
+            "suggested_insulin_required": _num(suggested.get("insulinReq")),
+            "suggested_target_bg": _mgdl(suggested.get("targetBG")),
+            "suggested_sensitivity_ratio": _num(suggested.get("sensitivityRatio")),
+            "suggested_variable_sens": _num(suggested.get("variable_sens")),
+            "suggested_algorithm": _text(suggested.get("algorithm")),
+            "suggested_running_dynamic_isf": suggested.get("runningDynamicIsf"),
+            "suggested_reservoir": _num(suggested.get("reservoir")),
+            "suggested_smb": _num(suggested.get("smb")),
+            "suggested_received": suggested.get("received", suggested.get("recieved")),
+            "suggested_pred_bgs": suggested.get("predBGs") if isinstance(suggested.get("predBGs"), dict) else {},
+            "enacted_bg": _mgdl(enacted.get("bg")),
+            "enacted_snooze_bg": _mgdl(enacted.get("snoozeBG")),
+            "enacted_tick": _num(enacted.get("tick")),
+            "enacted_temp": _text(enacted.get("temp")),
+            "enacted_min_pred_bg": _mgdl(enacted.get("minPredBG")),
+            "enacted_rate": _num(enacted.get("rate")),
+            "enacted_duration": _num(enacted.get("duration")),
+            "enacted_deliver_at": _parse_dt(enacted.get("deliverAt")),
+            "enacted_timestamp": _parse_dt(enacted.get("timestamp")),
+            "enacted_insulin_required": _num(enacted.get("insulinReq")),
+            "enacted_target_bg": _mgdl(enacted.get("targetBG")),
+            "enacted_sensitivity_ratio": _num(enacted.get("sensitivityRatio")),
+            "enacted_variable_sens": _num(enacted.get("variable_sens")),
+            "enacted_received": enacted.get("received", enacted.get("recieved")),
+            "enacted_pred_bgs": enacted.get("predBGs") if isinstance(enacted.get("predBGs"), dict) else {},
+
             # Decision values surfaced as sensors.
-            "iob": decision.get("iob"),
+            "iob": raw_iob if raw_iob is not None else decision.get("iob"),
+            "basal_iob": basal_iob,
+            "bolus_iob": bolus_iob,
+            "insulin_activity": insulin_activity,
+            "bolus_snooze": bolus_snooze,
+            "net_basal_insulin": net_basal_insulin,
+            "high_temp_insulin": high_temp_insulin,
+            "microbolus_insulin": microbolus_insulin,
+            "microbolus_iob": microbolus_iob,
+            "iob_last_bolus_time": iob_last_bolus_time,
+            "iob_timestamp": iob_timestamp,
             "cob": decision.get("cob"),
+            "snooze_bg": decision.get("snooze_bg"),
+            "aaps_tick": decision.get("tick"),
+            "aaps_temp": decision.get("temp"),
+            "aaps_reservoir": decision.get("reservoir"),
+            "aaps_delivery_time": decision.get("deliver_at"),
+            "aaps_suggestion_time": _parse_dt(decision.get("timestamp")),
             "eventual_bg": decision.get("eventual_bg"),
             "target_bg": decision.get("target_bg"),
             "insulin_required": decision.get("insulin_required"),
@@ -1228,6 +1387,11 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "absorption_cutoff": absorption_cutoff,
             "min_carb_impact": min_carb_impact,
             "dyn_isf_adjust": dyn_isf_adjust,
+            "aaps_config_version": _text(aaps_config.get("version")),
+            "aaps_config_pump": _text(aaps_config.get("pump")),
+            "aaps_config_insulin": _num(aaps_config.get("insulin")),
+            "aaps_config_aps": _text(aaps_config.get("aps")),
+            "aaps_config_sensitivity": _num(aaps_config.get("sensitivity")),
 
             # AAPS status-light thresholds.
             "reservoir_warning": _num(
