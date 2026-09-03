@@ -1263,6 +1263,12 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         pump_clock = _parse_dt(pump.get("clock"), profile_tz)
 
+        # DataUpdateCoordinator starts with self.data=None on the first REST
+        # refresh. Use the previous cached data only when it actually exists.
+        # This is also important for fallback values such as the last known
+        # temp basal rate.
+        previous_data = self.data if isinstance(self.data, dict) else {}
+
         # Raw OpenAPS/AAPS IOB fields. These are preferred over values repeated
         # in suggested/enacted because openaps.iob is the authoritative IOB record.
         raw_iob = _num(iob_record.get("iob"))
@@ -1289,7 +1295,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             pump_ext.get("TempBasalAbsoluteRate"),
             temp_remaining,
             base_basal,
-            self.data.get("temp_basal_rate"),
+            previous_data.get("temp_basal_rate"),
         )
         temp_start = _parse_dt(
             pump_ext.get("TempBasalStart"), profile_tz
