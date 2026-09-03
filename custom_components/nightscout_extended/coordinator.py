@@ -75,6 +75,38 @@ def _num(value: Any) -> float | None:
         return None
 
 
+def _zero_if_none(value: Any) -> float:
+    """Return a numeric value, using zero when the source has no value."""
+    result = _num(value)
+    return 0.0 if result is None else result
+
+
+def _resolve_temp_basal_rate(
+    current_rate: Any, remaining: Any, base_basal: Any, previous_rate: Any = None
+) -> float | None:
+    """Resolve the displayed temp basal rate.
+
+    While a temp basal has time remaining, retain the last known rate when a
+    Socket.IO delta omits the rate. Once the temp basal has expired, report the
+    base basal rate instead.
+    """
+    rate = _num(current_rate)
+    remaining_num = _num(remaining)
+    base_rate = _num(base_basal)
+    previous_num = _num(previous_rate)
+
+    if remaining_num is not None and remaining_num > 0:
+        if rate is not None:
+            return rate
+        if previous_num is not None:
+            return previous_num
+        return None
+
+    if base_rate is not None:
+        return base_rate
+    return rate if rate is not None else previous_num
+
+
 def _text(value: Any) -> str | None:
     if value is None:
         return None
@@ -550,7 +582,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "suggested_running_dynamic_isf": suggested.get("runningDynamicIsf"),
                 "suggested_reservoir": _num(suggested.get("reservoir")),
                 "suggested_smb": _num(suggested.get("smb")),
-                "suggested_units": suggested_units,
+                "suggested_units": _zero_if_none(suggested_units),
                 "suggested_received": suggested.get("received", suggested.get("recieved")),
                 "suggested_pred_bgs": suggested.get("predBGs") if isinstance(suggested.get("predBGs"), dict) else {},
                 "enacted_bg": _mgdl(enacted.get("bg")),
@@ -565,7 +597,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "enacted_insulin_required": _num(enacted.get("insulinReq")),
                 "enacted_target_bg": _mgdl(enacted.get("targetBG")),
                 "enacted_sensitivity_ratio": _num(enacted.get("sensitivityRatio")),
-                "enacted_units": enacted_units,
+                "enacted_units": _zero_if_none(enacted_units),
                 "enacted_meal_assist": enacted.get("mealAssist"),
                 "enacted_variable_sens": _num(enacted.get("variable_sens")),
                 "enacted_received": enacted.get("received", enacted.get("recieved")),
@@ -604,15 +636,39 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.data["dynamic_isf"] = bool(latest_aaps.get("configuration", {}).get("apsConfiguration", {}).get("use_dynamic_sensitivity", self.data.get("dynamic_isf")))
             self.data["delivery_received"] = decision.get("received")
             self.data["aaps_device"] = _text(latest_aaps.get("device")) or self.data.get("aaps_device")
-            if isinstance(latest_aaps.get("uploader"), dict):
-                if latest_aaps["uploader"].get("battery") is not None:
-                    self.data["uploader_battery"] = _num(latest_aaps["uploader"].get("battery"))
-                if latest_aaps["uploader"].get("batteryVoltage") is not None:
-                    self.data["uploader_battery_voltage"] = _num(latest_aaps["uploader"].get("batteryVoltage"))
-            elif latest_aaps.get("uploaderBattery") is not None:
-                self.data["uploader_battery"] = _num(latest_aaps.get("uploaderBattery"))
-            if latest_aaps.get("isCharging") is not None:
-                self.data["charging"] = latest_aaps.get("isCharging")
+
+            # Uploader/phone data is not guaranteed to be present on the same
+            # devicestatus record as OpenAPS data. Search all recent status
+            # records so uploaderBattery cannot disappear just because the
+            # latest OpenAPS delta omitted it. Support both the normalized
+            # uploader object and the legacy uploaderBattery field.
+            uploader_records = [
+                x for x in statuses
+                if isinstance(x, dict)
+                and (
+                    isinstance(x.get("uploader"), dict)
+                    or x.get("uploaderBattery") is not None
+                    or x.get("isCharging") is not None
+                )
+            ]
+            if uploader_records:
+                uploader_records.sort(key=sort_key, reverse=True)
+                for record in uploader_records:
+                    uploader_data = record.get("uploader") if isinstance(record.get("uploader"), dict) else {}
+                    if uploader_data.get("battery") is not None:
+                        self.data["uploader_battery"] = _num(uploader_data.get("battery"))
+                    elif record.get("uploaderBattery") is not None:
+                        self.data["uploader_battery"] = _num(record.get("uploaderBattery"))
+                    if uploader_data.get("batteryVoltage") is not None:
+                        self.data["uploader_battery_voltage"] = _num(uploader_data.get("batteryVoltage"))
+                    if record.get("isCharging") is not None:
+                        self.data["charging"] = bool(record.get("isCharging"))
+                    if (
+                        self.data.get("uploader_battery") is not None
+                        and self.data.get("uploader_battery_voltage") is not None
+                        and self.data.get("charging") is not None
+                    ):
+                        break
 
             pump = latest_aaps.get("pump") if isinstance(latest_aaps.get("pump"), dict) else {}
             ext = pump.get("extended") if isinstance(pump.get("extended"), dict) else {}
@@ -627,10 +683,20 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.data["pump_status_timestamp"] = _parse_dt(pump.get("status", {}).get("timestamp"), profile_tz) if isinstance(pump.get("status"), dict) else self.data.get("pump_status_timestamp")
             self.data["reservoir"] = _num(ext.get("Reservoir")) if ext.get("Reservoir") is not None else _num(pump.get("reservoir"))
             self.data["pump_battery"] = _num(pump.get("battery", {}).get("percent")) if isinstance(pump.get("battery"), dict) else _num(pump.get("battery"))
-            self.data["base_basal"] = _num(ext.get("BaseBasalRate"))
-            self.data["temp_basal_rate"] = _num(ext.get("TempBasalAbsoluteRate"))
-            self.data["temp_basal_remaining"] = _num(ext.get("TempBasalRemaining"))
-            self.data["temp_basal_start"] = _parse_dt(ext.get("TempBasalStart"), profile_tz)
+            socket_base_basal = _num(ext.get("BaseBasalRate"))
+            socket_temp_remaining = _num(ext.get("TempBasalRemaining"))
+            if socket_temp_remaining is None:
+                socket_temp_remaining = _num(self.data.get("temp_basal_remaining"))
+            socket_temp_rate = _resolve_temp_basal_rate(
+                ext.get("TempBasalAbsoluteRate"),
+                socket_temp_remaining,
+                socket_base_basal if socket_base_basal is not None else self.data.get("base_basal"),
+                self.data.get("temp_basal_rate"),
+            )
+            self.data["base_basal"] = socket_base_basal if socket_base_basal is not None else self.data.get("base_basal")
+            self.data["temp_basal_rate"] = socket_temp_rate
+            self.data["temp_basal_remaining"] = socket_temp_remaining
+            self.data["temp_basal_start"] = _parse_dt(ext.get("TempBasalStart"), profile_tz) or self.data.get("temp_basal_start")
             self.data["last_bolus_amount"] = _num(ext.get("LastBolusAmount"))
             self.data["last_bolus_time"] = _parse_dt(ext.get("LastBolus"), profile_tz)
             self.data["pump_clock"] = _parse_dt(pump.get("clock"), profile_tz)
@@ -900,11 +966,35 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not isinstance(iob_record, dict):
             iob_record = {}
 
-        uploader = latest_aaps.get("uploader", {}) if isinstance(latest_aaps.get("uploader"), dict) else {}
-        uploader_battery = _num(uploader.get("battery"))
-        if uploader_battery is None:
-            uploader_battery = _num(latest_aaps.get("uploaderBattery"))
-        charging = latest_aaps.get("isCharging")
+        # Uploader/phone data can be stored on a separate AAPS devicestatus
+        # record from the OpenAPS dosing record. Search all recent status
+        # records, supporting both normalized uploader data and legacy
+        # uploaderBattery.
+        uploader_battery = None
+        uploader_battery_voltage = None
+        charging = None
+        uploader_records = [
+            x for x in devicestatus
+            if isinstance(x, dict)
+            and (
+                isinstance(x.get("uploader"), dict)
+                or x.get("uploaderBattery") is not None
+                or x.get("isCharging") is not None
+            )
+        ]
+        for record in sorted(uploader_records, key=record_sort_key, reverse=True):
+            uploader_data = record.get("uploader") if isinstance(record.get("uploader"), dict) else {}
+            if uploader_battery is None:
+                if uploader_data.get("battery") is not None:
+                    uploader_battery = _num(uploader_data.get("battery"))
+                elif record.get("uploaderBattery") is not None:
+                    uploader_battery = _num(record.get("uploaderBattery"))
+            if uploader_battery_voltage is None and uploader_data.get("batteryVoltage") is not None:
+                uploader_battery_voltage = _num(uploader_data.get("batteryVoltage"))
+            if charging is None and record.get("isCharging") is not None:
+                charging = bool(record.get("isCharging"))
+            if uploader_battery is not None and uploader_battery_voltage is not None and charging is not None:
+                break
 
         # Current glucose is authoritative from Nightscout entries.
         bg = _mgdl(latest_entry.get("sgv") or latest_entry.get("mbg"))
@@ -1193,8 +1283,14 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             pump_status = _text(pump_status_raw)
 
-        temp_rate = _num(pump_ext.get("TempBasalAbsoluteRate"))
+        base_basal = _num(pump_ext.get("BaseBasalRate"))
         temp_remaining = _num(pump_ext.get("TempBasalRemaining"))
+        temp_rate = _resolve_temp_basal_rate(
+            pump_ext.get("TempBasalAbsoluteRate"),
+            temp_remaining,
+            base_basal,
+            self.data.get("temp_basal_rate"),
+        )
         temp_start = _parse_dt(
             pump_ext.get("TempBasalStart"), profile_tz
         )
@@ -1318,21 +1414,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         meal_assist = _first_text(suggested.get("mealAssist"), enacted.get("mealAssist"))
         suggested_units = _first_num(suggested.get("units"))
         enacted_units = _first_num(enacted.get("units"))
-        # Search recent AAPS records independently for uploader data so an
-        # OpenAPS record without uploader data does not hide a valid value.
-        uploader_battery = None
-        uploader_battery_voltage = None
-        charging_value = None
-        for record in sorted(aaps_records, key=record_sort_key, reverse=True):
-            up = record.get("uploader") if isinstance(record.get("uploader"), dict) else {}
-            if uploader_battery is None:
-                uploader_battery = _num(up.get("battery"))
-            if uploader_battery_voltage is None:
-                uploader_battery_voltage = _num(up.get("batteryVoltage"))
-            if charging_value is None and record.get("isCharging") is not None:
-                charging_value = bool(record.get("isCharging"))
-            if uploader_battery is not None and uploader_battery_voltage is not None and charging_value is not None:
-                break
+        charging_value = charging
 
         # Nightscout/OpenAPS mmtune diagnostic data. Keep the raw structure in
         # attributes and expose the common summary values when available.
@@ -1353,6 +1435,14 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     rssi = _num(details.get("rssi"))
                     if rssi is not None and (mmtune_best_rssi is None or rssi > mmtune_best_rssi):
                         mmtune_best_rssi = rssi
+
+        # These quantities represent an amount/duration that is naturally zero
+        # when AAPS has no current value to report.
+        meal_insulin_req = _zero_if_none(meal_insulin_req)
+        max_uam_smb_basal_minutes = _zero_if_none(max_uam_smb_basal_minutes)
+        current_basal = _zero_if_none(current_basal)
+        suggested_units = _zero_if_none(suggested_units)
+        enacted_units = _zero_if_none(enacted_units)
 
         data = {
             "status": status,
@@ -1397,14 +1487,14 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "future_state_sensitivity": future_sens,
             "csf": csf,
             "isf_for_carbs": isf_for_carbs,
-            "meal_insulin_required": meal_insulin_req,
-            "max_uam_smb_basal_minutes": max_uam_smb_basal_minutes,
-            "aaps_current_basal": current_basal,
+            "meal_insulin_required": _zero_if_none(meal_insulin_req),
+            "max_uam_smb_basal_minutes": _zero_if_none(max_uam_smb_basal_minutes),
+            "aaps_current_basal": _zero_if_none(current_basal),
             "last_bolus_age": last_bolus_age,
             "zero_temp_rate": zero_temp_rate,
             "meal_assist": meal_assist,
-            "suggested_units": suggested_units,
-            "enacted_units": enacted_units,
+            "suggested_units": _zero_if_none(suggested_units),
+            "enacted_units": _zero_if_none(enacted_units),
             "zero_temp_duration": zero_temp_duration,
             "zero_temp_effect": zero_temp_effect,
 
@@ -1446,7 +1536,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "pump_status_timestamp": _parse_dt(pump.get("status", {}).get("timestamp"), profile_tz) if isinstance(pump.get("status"), dict) else None,
             "reservoir": reservoir,
             "pump_battery": pump_battery,
-            "base_basal": _num(pump_ext.get("BaseBasalRate")),
+            "base_basal": base_basal,
             "temp_basal_rate": temp_rate,
             "temp_basal_remaining": temp_remaining,
             "temp_basal_start": temp_start,
