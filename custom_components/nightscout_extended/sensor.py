@@ -47,7 +47,7 @@ SENSORS = [
     ("eventual_bg", "Eventual BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("target_bg", "AAPS Target BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("insulin_required", "Insulin Required", "U", None, None),
-    ("sensitivity_ratio", "Sensitivity Ratio", None, None, EntityCategory.DIAGNOSTIC),
+    ("sensitivity_ratio", "Sensitivity Ratio", "%", None, EntityCategory.DIAGNOSTIC),
     ("snooze_bg", "Snooze BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("aaps_tick", "AAPS Tick", None, None, EntityCategory.DIAGNOSTIC),
     ("aaps_temp", "AAPS Temp Type", None, None, EntityCategory.DIAGNOSTIC),
@@ -79,7 +79,7 @@ SENSORS = [
     ("suggested_timestamp", "AAPS Suggested Calculation Time", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("suggested_insulin_required", "AAPS Suggested Insulin Required", "U", None, EntityCategory.DIAGNOSTIC),
     ("suggested_target_bg", "AAPS Suggested Target BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
-    ("suggested_sensitivity_ratio", "AAPS Suggested Sensitivity Ratio", None, None, EntityCategory.DIAGNOSTIC),
+    ("suggested_sensitivity_ratio", "AAPS Suggested Sensitivity Ratio", "%", None, EntityCategory.DIAGNOSTIC),
     ("suggested_variable_sens", "AAPS Suggested Variable Sensitivity", None, None, EntityCategory.DIAGNOSTIC),
     ("suggested_algorithm", "AAPS Suggested Algorithm", None, None, EntityCategory.DIAGNOSTIC),
     ("suggested_reservoir", "AAPS Suggested Reservoir", "U", None, EntityCategory.DIAGNOSTIC),
@@ -97,7 +97,7 @@ SENSORS = [
     ("enacted_timestamp", "AAPS Enacted Calculation Time", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("enacted_insulin_required", "AAPS Enacted Insulin Required", "U", None, EntityCategory.DIAGNOSTIC),
     ("enacted_target_bg", "AAPS Enacted Target BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
-    ("enacted_sensitivity_ratio", "AAPS Enacted Sensitivity Ratio", None, None, EntityCategory.DIAGNOSTIC),
+    ("enacted_sensitivity_ratio", "AAPS Enacted Sensitivity Ratio", "%", None, EntityCategory.DIAGNOSTIC),
     ("enacted_units", "AAPS Enacted Units", "U", None, EntityCategory.DIAGNOSTIC),
     ("enacted_meal_assist", "AAPS Enacted Meal Assist", None, None, EntityCategory.DIAGNOSTIC),
 
@@ -116,7 +116,7 @@ SENSORS = [
     ("zero_temp_duration", "Zero Temp Duration", "min", None, EntityCategory.DIAGNOSTIC),
     ("zero_temp_effect", "Zero Temp Effect", None, None, EntityCategory.DIAGNOSTIC),
     ("carbs_required", "Carbs Required", "g", None, EntityCategory.DIAGNOSTIC),
-    ("autosens_ratio", "Autosens Ratio", None, None, EntityCategory.DIAGNOSTIC),
+    ("autosens_ratio", "Autosens Ratio", "%", None, EntityCategory.DIAGNOSTIC),
     ("future_state_sensitivity", "Future State Sensitivity", None, None, EntityCategory.DIAGNOSTIC),
     ("csf", "Carb Sensitivity Factor", None, None, EntityCategory.DIAGNOSTIC),
     ("isf_for_carbs", "ISF for Carbs", None, None, EntityCategory.DIAGNOSTIC),
@@ -146,7 +146,7 @@ SENSORS = [
     ("autosens_max", "Autosens Maximum", None, None, EntityCategory.DIAGNOSTIC),
     ("absorption_cutoff", "Carb Absorption Cutoff", "h", None, EntityCategory.DIAGNOSTIC),
     ("min_carb_impact", "Minimum Carb Impact", None, None, EntityCategory.DIAGNOSTIC),
-    ("dyn_isf_adjust", "Dynamic ISF Adjustment", None, None, EntityCategory.DIAGNOSTIC),
+    ("dyn_isf_adjust", "Dynamic ISF Adjustment", "%", None, EntityCategory.DIAGNOSTIC),
     ("aaps_config_version", "AAPS Configuration Version", None, None, EntityCategory.DIAGNOSTIC),
     ("aaps_config_pump", "AAPS Configuration Pump", None, None, EntityCategory.DIAGNOSTIC),
     ("aaps_config_insulin", "AAPS Configuration Insulin", None, None, EntityCategory.DIAGNOSTIC),
@@ -200,7 +200,9 @@ GLUCOSE_KEYS = {
     "min_guard", "min_uam", "naive_eventual", "bg_undershoot", "average_bg", "bg_sd",
     "profile_target_low", "profile_target_high", "low_mark", "high_mark", "aaps_tick", "suggested_tick", "enacted_tick",
 }
-ISF_KEYS = {"current_isf", "profile_sens", "variable_sens", "suggested_variable_sens"}
+ISF_KEYS = {"current_isf", "profile_sens", "variable_sens", "suggested_variable_sens", "isf_for_carbs"}
+IMPACT_KEYS = {"carb_impact", "uam_impact", "min_carb_impact"}
+CSF_KEYS = {"csf"}
 TIMESTAMP_KEYS = {key for key, _, _, device_class, _ in SENSORS if device_class == SensorDeviceClass.TIMESTAMP}
 
 
@@ -231,6 +233,9 @@ def _value(data: dict[str, Any], key: str) -> Any:
     if key in ISF_KEYS:
         value = _number(value)
         return value / 18.0 if value is not None and isf_unit == "mmol/L/U" else value
+    if key in IMPACT_KEYS or key in CSF_KEYS:
+        value = _number(value)
+        return value / 18.0 if value is not None and glucose_unit == "mmol/L" else value
     return value
 
 
@@ -246,6 +251,14 @@ class NightscoutExtendedSensor(SensorEntity):
             self._attr_native_unit_of_measurement = coordinator.glucose_unit
         elif key in ISF_KEYS:
             self._attr_native_unit_of_measurement = coordinator.isf_unit
+        elif key in IMPACT_KEYS:
+            self._attr_native_unit_of_measurement = (
+                "mmol/L/5min" if coordinator.glucose_unit == "mmol/L" else "mg/dL/5min"
+            )
+        elif key in CSF_KEYS:
+            self._attr_native_unit_of_measurement = (
+                "mmol/L/g" if coordinator.glucose_unit == "mmol/L" else "mg/dL/g"
+            )
         else:
             self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class

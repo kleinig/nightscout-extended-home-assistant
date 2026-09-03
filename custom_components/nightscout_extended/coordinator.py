@@ -80,6 +80,11 @@ def _zero_if_none(value: Any) -> float:
     result = _num(value)
     return 0.0 if result is None else result
 
+def _percent_ratio(value: Any) -> float | None:
+    """Convert an AAPS sensitivity ratio (e.g. 0.628) to percent (62.8%)."""
+    result = _num(value)
+    return result * 100.0 if result is not None else None
+
 
 def _resolve_temp_basal_rate(
     current_rate: Any, remaining: Any, base_basal: Any, previous_rate: Any = None
@@ -308,7 +313,7 @@ def _decision(aaps: dict[str, Any]) -> dict[str, Any]:
         "eventual_bg": _mgdl(source.get("eventualBG")),
         "target_bg": _mgdl(source.get("targetBG")),
         "insulin_required": _num(source.get("insulinReq")),
-        "sensitivity_ratio": _num(source.get("sensitivityRatio")),
+        "sensitivity_ratio": _percent_ratio(source.get("sensitivityRatio")),
         "variable_sens": _num(source.get("variable_sens")),
         "iob": _num(source.get("IOB")),
         "cob": _num(source.get("COB")),
@@ -576,7 +581,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "suggested_timestamp": _parse_dt(suggested.get("timestamp"), profile_tz),
                 "suggested_insulin_required": _num(suggested.get("insulinReq")),
                 "suggested_target_bg": _mgdl(suggested.get("targetBG")),
-                "suggested_sensitivity_ratio": _num(suggested.get("sensitivityRatio")),
+                "suggested_sensitivity_ratio": _percent_ratio(suggested.get("sensitivityRatio")),
                 "suggested_variable_sens": _num(suggested.get("variable_sens")),
                 "suggested_algorithm": _text(suggested.get("algorithm")),
                 "suggested_running_dynamic_isf": suggested.get("runningDynamicIsf"),
@@ -596,7 +601,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "enacted_timestamp": _parse_dt(enacted.get("timestamp"), profile_tz),
                 "enacted_insulin_required": _num(enacted.get("insulinReq")),
                 "enacted_target_bg": _mgdl(enacted.get("targetBG")),
-                "enacted_sensitivity_ratio": _num(enacted.get("sensitivityRatio")),
+                "enacted_sensitivity_ratio": _percent_ratio(enacted.get("sensitivityRatio")),
                 "enacted_units": _zero_if_none(enacted_units),
                 "enacted_meal_assist": enacted.get("mealAssist"),
                 "enacted_variable_sens": _num(enacted.get("variable_sens")),
@@ -1489,7 +1494,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "uam_impact": uam_impact,
             "uam_duration": uam_duration,
             "carbs_required": carbs_required,
-            "autosens_ratio": autosens_ratio,
+            "autosens_ratio": _percent_ratio(autosens_ratio),
             "future_state_sensitivity": future_sens,
             "csf": csf,
             "isf_for_carbs": isf_for_carbs,
@@ -1561,7 +1566,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "suggested_timestamp": _parse_dt(suggested.get("timestamp"), profile_tz),
             "suggested_insulin_required": _num(suggested.get("insulinReq")),
             "suggested_target_bg": _mgdl(suggested.get("targetBG")),
-            "suggested_sensitivity_ratio": _num(suggested.get("sensitivityRatio")),
+            "suggested_sensitivity_ratio": _percent_ratio(suggested.get("sensitivityRatio")),
             "suggested_variable_sens": _num(suggested.get("variable_sens")),
             "suggested_algorithm": _text(suggested.get("algorithm")),
             "suggested_running_dynamic_isf": suggested.get("runningDynamicIsf"),
@@ -1582,7 +1587,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "enacted_timestamp": _parse_dt(enacted.get("timestamp"), profile_tz),
             "enacted_insulin_required": _num(enacted.get("insulinReq")),
             "enacted_target_bg": _mgdl(enacted.get("targetBG")),
-            "enacted_sensitivity_ratio": _num(enacted.get("sensitivityRatio")),
+            "enacted_sensitivity_ratio": _percent_ratio(enacted.get("sensitivityRatio")),
             "enacted_units": enacted_units,
             "enacted_meal_assist": enacted.get("mealAssist"),
             "enacted_variable_sens": _num(enacted.get("variable_sens")),
