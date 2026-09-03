@@ -1269,7 +1269,68 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for kind, event in rest_changes.items():
             self._change_events[kind] = event
 
-        # Additional raw/diagnostic values. Keep these as None when AAPS/Nightscout\n        # does not supply them; do not infer substitutes for raw fields.\n        def _first_text(*values):\n            for value in values:\n                if value is not None and str(value).strip():\n                    return _text(value)\n            return None\n\n        def _first_num(*values):\n            for value in values:\n                parsed = _num(value)\n                if parsed is not None:\n                    return parsed\n            return None\n\n        # AAPS console diagnostics. AAPS writes these labels into consoleLog/\n        # consoleError in some algorithm states. They are deliberately parsed\n        # only when the exact label is present.\n        console_text = "\\n".join(\n            x for x in (\n                _text(latest_aaps.get("consoleLog")),\n                _text(latest_aaps.get("consoleError")),\n                _text(suggested.get("consoleLog")),\n                _text(suggested.get("consoleError")),\n            ) if x\n        )\n        autosens_ratio = _first_number_from_text(console_text, "Autosens ratio")\n        future_sens = _first_number_from_text(console_text, "Future state sensitivity")\n        csf = _first_number_from_text(console_text, "CSF")\n        isf_for_carbs = _first_number_from_text(console_text, "isfMgdlForCarbs")\n        meal_insulin_req = _first_number_from_text(console_text, "mealInsulinReq")\n        max_uam_smb_basal_minutes = _first_number_from_text(console_text, "maxUAMSMBBasalMinutes")\n        current_basal = _first_number_from_text(console_text, "current_basal")\n        last_bolus_age = _first_number_from_text(console_text, "last bolus")\n        zero_temp_rate = None\n        match_zero_rate = re.search(r"zeroTempDuration\\s+(-?\\d+(?:\\.\\d+)?)\\s+zeroTempEffect\\s*:\\s*(-?\\d+(?:\\.\\d+)?)", console_text, re.I)\n        if match_zero_rate:\n            zero_temp_rate = _first_number_from_text(console_text, "temp needed")\n        carbs_required = self.data.get("carbs_required") if self.data else None\n        if carbs_required is None:\n            carbs_required = _first_number_from_text(console_text, "carbsReq")\n        meal_assist = _first_text(suggested.get("mealAssist"), enacted.get("mealAssist"))\n        suggested_units = _first_num(suggested.get("units"))\n        enacted_units = _first_num(enacted.get("units"))\n        # Search recent AAPS records independently for uploader data so an\n        # OpenAPS record without uploader data does not hide a valid value.\n        uploader_battery = None\n        uploader_battery_voltage = None\n        charging_value = None\n        for record in sorted(aaps_records, key=record_sort_key, reverse=True):\n            up = record.get("uploader") if isinstance(record.get("uploader"), dict) else {}\n            if uploader_battery is None:\n                uploader_battery = _num(up.get("battery"))\n            if uploader_battery_voltage is None:\n                uploader_battery_voltage = _num(up.get("batteryVoltage"))\n            if charging_value is None and record.get("isCharging") is not None:\n                charging_value = bool(record.get("isCharging"))\n            if uploader_battery is not None and uploader_battery_voltage is not None and charging_value is not None:\n                break\n\n        # Nightscout/OpenAPS mmtune diagnostic data. Keep the raw structure in
+        # Additional raw/diagnostic values. Keep these as None when AAPS/Nightscout
+        # does not supply them; do not infer substitutes for raw fields.
+        def _first_text(*values):
+            for value in values:
+                if value is not None and str(value).strip():
+                    return _text(value)
+            return None
+
+        def _first_num(*values):
+            for value in values:
+                parsed = _num(value)
+                if parsed is not None:
+                    return parsed
+            return None
+
+        # AAPS console diagnostics. AAPS writes these labels into consoleLog/
+        # consoleError in some algorithm states. They are deliberately parsed
+        # only when the exact label is present.
+        console_text = "\
+".join(
+            x for x in (
+                _text(latest_aaps.get("consoleLog")),
+                _text(latest_aaps.get("consoleError")),
+                _text(suggested.get("consoleLog")),
+                _text(suggested.get("consoleError")),
+            ) if x
+        )
+        autosens_ratio = _first_number_from_text(console_text, "Autosens ratio")
+        future_sens = _first_number_from_text(console_text, "Future state sensitivity")
+        csf = _first_number_from_text(console_text, "CSF")
+        isf_for_carbs = _first_number_from_text(console_text, "isfMgdlForCarbs")
+        meal_insulin_req = _first_number_from_text(console_text, "mealInsulinReq")
+        max_uam_smb_basal_minutes = _first_number_from_text(console_text, "maxUAMSMBBasalMinutes")
+        current_basal = _first_number_from_text(console_text, "current_basal")
+        last_bolus_age = _first_number_from_text(console_text, "last bolus")
+        zero_temp_rate = None
+        match_zero_rate = re.search(r"zeroTempDuration\\s+(-?\\d+(?:\\.\\d+)?)\\s+zeroTempEffect\\s*:\\s*(-?\\d+(?:\\.\\d+)?)", console_text, re.I)
+        if match_zero_rate:
+            zero_temp_rate = _first_number_from_text(console_text, "temp needed")
+        carbs_required = self.data.get("carbs_required") if self.data else None
+        if carbs_required is None:
+            carbs_required = _first_number_from_text(console_text, "carbsReq")
+        meal_assist = _first_text(suggested.get("mealAssist"), enacted.get("mealAssist"))
+        suggested_units = _first_num(suggested.get("units"))
+        enacted_units = _first_num(enacted.get("units"))
+        # Search recent AAPS records independently for uploader data so an
+        # OpenAPS record without uploader data does not hide a valid value.
+        uploader_battery = None
+        uploader_battery_voltage = None
+        charging_value = None
+        for record in sorted(aaps_records, key=record_sort_key, reverse=True):
+            up = record.get("uploader") if isinstance(record.get("uploader"), dict) else {}
+            if uploader_battery is None:
+                uploader_battery = _num(up.get("battery"))
+            if uploader_battery_voltage is None:
+                uploader_battery_voltage = _num(up.get("batteryVoltage"))
+            if charging_value is None and record.get("isCharging") is not None:
+                charging_value = bool(record.get("isCharging"))
+            if uploader_battery is not None and uploader_battery_voltage is not None and charging_value is not None:
+                break
+
+        # Nightscout/OpenAPS mmtune diagnostic data. Keep the raw structure in
         # attributes and expose the common summary values when available.
         mmtune = latest_aaps.get("mmtune") if isinstance(latest_aaps.get("mmtune"), dict) else {}
         mmtune_frequency = _first_num(mmtune.get("setFreq"), mmtune.get("frequency"))
