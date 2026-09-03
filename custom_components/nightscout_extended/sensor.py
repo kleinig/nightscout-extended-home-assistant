@@ -294,10 +294,47 @@ class NightscoutExtendedSensor(SensorEntity):
         return _value(self.coordinator.data, self.key)
 
     @property
+    def available(self):
+        # Match the official Nightscout integration's behaviour for the
+        # primary blood-glucose entity: it is unavailable when there is no
+        # current SGV. Other Extended entities retain their normal availability.
+        if self.key == "bg":
+            return self.coordinator.data.get("bg") is not None
+        return True
+
+    @property
+    def icon(self):
+        if self.key != "bg":
+            return None
+        direction = self.coordinator.data.get("direction")
+        return {
+            "Flat": "mdi:arrow-right",
+            "SingleDown": "mdi:arrow-down",
+            "FortyFiveDown": "mdi:arrow-bottom-right",
+            "DoubleDown": "mdi:chevron-triple-down",
+            "SingleUp": "mdi:arrow-up",
+            "FortyFiveUp": "mdi:arrow-top-right",
+            "DoubleUp": "mdi:chevron-triple-up",
+        }.get(direction, "mdi:cloud-question")
+
+    @property
     def extra_state_attributes(self):
         data = self.coordinator.data
         attrs: dict[str, Any] = {}
         decision = data.get("decision") or {}
+
+        # Keep the primary Blood Glucose entity compatible with Home
+        # Assistant's built-in Nightscout integration while this integration
+        # supplies all of the Extended entities around it. These are the four
+        # attributes exposed by the official integration.
+        if self.key == "bg":
+            latest = data.get("latest_entry") or {}
+            attrs.update({
+                "device": latest.get("device"),
+                "date": data.get("entry_time"),
+                "delta": data.get("delta"),
+                "direction": data.get("direction"),
+            })
 
         if self.key in {"decision_state", "decision_reason", "decision_source"}:
             attrs.update({

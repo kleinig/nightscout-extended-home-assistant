@@ -1,6 +1,6 @@
 {
   "name": "Nightscout Extended",
   "content_in_root": false,
-  "filename": "nightscout_extended",
-  "render_readme": true
+  "render_readme": true,
+  "zip_release": true
 }
