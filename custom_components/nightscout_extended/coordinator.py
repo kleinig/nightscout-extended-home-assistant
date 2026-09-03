@@ -230,6 +230,15 @@ def _first_number_from_text(text: str | None, label: str) -> float | None:
     return _num(match.group(1)) if match else None
 
 
+def _first_num(*values):
+    """Return the first value that can be converted to a number."""
+    for value in values:
+        parsed = _num(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _decision(aaps: dict[str, Any]) -> dict[str, Any]:
     openaps = aaps.get("openaps")
     if not isinstance(openaps, dict):
@@ -521,6 +530,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 iob_record = iob_record[0] if iob_record else {}
             if not isinstance(iob_record, dict):
                 iob_record = {}
+            suggested_units = _first_num(suggested.get("units"))
+            enacted_units = _first_num(enacted.get("units"))
             self.data.update({
                 "suggested_bg": _mgdl(suggested.get("bg")),
                 "suggested_snooze_bg": _mgdl(suggested.get("snoozeBG")),
@@ -539,7 +550,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "suggested_running_dynamic_isf": suggested.get("runningDynamicIsf"),
                 "suggested_reservoir": _num(suggested.get("reservoir")),
                 "suggested_smb": _num(suggested.get("smb")),
-            "suggested_units": suggested_units,
+                "suggested_units": suggested_units,
                 "suggested_received": suggested.get("received", suggested.get("recieved")),
                 "suggested_pred_bgs": suggested.get("predBGs") if isinstance(suggested.get("predBGs"), dict) else {},
                 "enacted_bg": _mgdl(enacted.get("bg")),
@@ -554,8 +565,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "enacted_insulin_required": _num(enacted.get("insulinReq")),
                 "enacted_target_bg": _mgdl(enacted.get("targetBG")),
                 "enacted_sensitivity_ratio": _num(enacted.get("sensitivityRatio")),
-            "enacted_units": enacted_units,
-            "enacted_meal_assist": enacted.get("mealAssist"),
+                "enacted_units": enacted_units,
+                "enacted_meal_assist": enacted.get("mealAssist"),
                 "enacted_variable_sens": _num(enacted.get("variable_sens")),
                 "enacted_received": enacted.get("received", enacted.get("recieved")),
                 "enacted_pred_bgs": enacted.get("predBGs") if isinstance(enacted.get("predBGs"), dict) else {},
@@ -1275,13 +1286,6 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for value in values:
                 if value is not None and str(value).strip():
                     return _text(value)
-            return None
-
-        def _first_num(*values):
-            for value in values:
-                parsed = _num(value)
-                if parsed is not None:
-                    return parsed
             return None
 
         # AAPS console diagnostics. AAPS writes these labels into consoleLog/
