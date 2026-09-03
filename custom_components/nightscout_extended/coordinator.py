@@ -1255,6 +1255,5 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data["socket_connected"] = self._socket_connected
         self.data["socket_last_error"] = self._socket_last_error
         self.data["last_alarm"] = self.data.get("last_alarm")
-        self._apply_socket_events()
         return data
 
