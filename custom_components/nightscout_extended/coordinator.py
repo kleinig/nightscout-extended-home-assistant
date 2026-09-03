@@ -19,6 +19,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)
 
+def _safe_state_text(value: Any) -> Any:
+    """Keep text entity states within Home Assistant's 255-character limit."""
+    if isinstance(value, str) and len(value) > 255:
+        return value[:252] + "..."
+    return value
+
 from .const import (
     CONF_API_KEY,
     CONF_ENTRIES_COUNT,
@@ -29,6 +35,35 @@ from .const import (
     NAME,
 )
 
+
+
+def _decision_state(decision: dict[str, Any] | None) -> str:
+    """Return a short Home Assistant-safe state for the latest AAPS decision."""
+    if not decision:
+        return "Unknown"
+
+    reason = str(decision.get("reason") or "").lower()
+
+    # Prefer explicit delivery information where available.
+    smb = decision.get("smb")
+    if smb not in (None, 0, 0.0, "0", "0.0"):
+        return "Microbolus"
+
+    # Match common AAPS reason wording without exposing the long reason as state.
+    if "no temp required" in reason or "no temp" in reason:
+        return "No Temp Required"
+    if "temp basal" in reason or "temp" in reason and "basal" in reason:
+        return "Temp Basal"
+    if "microbolus" in reason or "micro bolus" in reason:
+        return "Microbolus"
+    if "setting current basal" in reason:
+        return "Current Basal"
+
+    # A valid calculation with no explicit delivery wording.
+    if decision.get("eventual_bg") is not None or decision.get("bg") is not None:
+        return "Calculated"
+
+    return "Unknown"
 
 def _num(value: Any) -> float | None:
     try:
@@ -452,6 +487,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.data[target] = decision.get(source)
             self.data["algorithm"] = _text(decision.get("algorithm"))
             self.data["decision_reason"] = decision.get("reason")
+            self.data["decision_state"] = _decision_state(decision)
             self.data["dynamic_isf"] = bool(latest_aaps.get("configuration", {}).get("apsConfiguration", {}).get("use_dynamic_sensitivity", self.data.get("dynamic_isf")))
             self.data["delivery_received"] = bool(latest_aaps.get("openaps", {}).get("enacted") or latest_aaps.get("openaps", {}).get("suggested"))
             self.data["aaps_device"] = _text(latest_aaps.get("device")) or self.data.get("aaps_device")
@@ -1173,6 +1209,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "requested_duration": decision.get("duration"),
             "smb_amount": decision.get("smb"),
             "decision_reason": decision.get("reason"),
+            "decision_state": _decision_state(decision),
             "algorithm": _text(decision.get("algorithm")),
 
             # Flags.

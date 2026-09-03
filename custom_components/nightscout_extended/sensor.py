@@ -61,6 +61,7 @@ SENSORS = [
     ("profile_target_low", "Profile Target Low (mmol/L)", "mmol/L", None, EntityCategory.DIAGNOSTIC),
     ("profile_target_high", "Profile Target High (mmol/L)", "mmol/L", None, EntityCategory.DIAGNOSTIC),
     ("algorithm", "AAPS Algorithm", None, None, EntityCategory.DIAGNOSTIC),
+    ("decision_state", "AAPS Decision", None, None, EntityCategory.DIAGNOSTIC),
     ("decision_reason", "AAPS Decision Reason", None, None, EntityCategory.DIAGNOSTIC),
     ("requested_rate", "Requested Basal Rate", "U/h", None, EntityCategory.DIAGNOSTIC),
     ("requested_duration", "Requested Temp Basal Duration", "min", None, EntityCategory.DIAGNOSTIC),
@@ -211,6 +212,11 @@ def _value(data: dict[str, Any], key: str) -> Any:
         return data.get(key)
     if key == "phone_battery":
         return data.get("uploader_battery")
+    if key == "decision_state":
+        return data.get("decision_state", "Unknown")
+    if key == "decision_reason":
+        reason = data.get("decision_reason")
+        return "Available" if reason else "Unavailable"
     if key in {"requested_rate", "requested_duration", "smb_amount"}:
         return data.get(key)
     return data.get(key)
@@ -247,7 +253,8 @@ class NightscoutExtendedSensor(SensorEntity):
 
     @property
     def native_value(self):
-        return _value(self.coordinator.data, self.key)
+        value = _value(self.coordinator.data, self.key)
+        return value
 
     @property
     def extra_state_attributes(self):
@@ -263,6 +270,33 @@ class NightscoutExtendedSensor(SensorEntity):
                     "requested_duration": decision.get("duration"),
                     "SMB": decision.get("smb"),
                 })
+                if self.key in {"decision_state", "decision_reason"}:
+                    # Keep the complete AAPS explanation as an attribute. Unlike
+                    # an entity state, attribute values are not subject to HA's
+                    # 255-character state limit.
+                    attrs["full_reason"] = decision.get("reason")
+                    attrs["decision_reason"] = decision.get("reason")
+                    attrs["decision_source"] = decision.get("source")
+                    attrs["bg"] = decision.get("bg")
+                    attrs["dosing_sensitivity"] = decision.get("dosing_sensitivity")
+                    attrs["cob"] = decision.get("cob")
+                    attrs["deviation"] = decision.get("deviation")
+                    attrs["bgi"] = decision.get("bgi")
+                    attrs["isf"] = decision.get("isf")
+                    attrs["carb_ratio"] = decision.get("carb_ratio")
+                    attrs["target_bg"] = decision.get("target_bg")
+                    attrs["min_pred_bg"] = decision.get("min_pred_bg")
+                    attrs["min_guard_bg"] = decision.get("min_guard_bg")
+                    attrs["iob_pred_bg"] = decision.get("min_iob_pred")
+                    attrs["uam_pred_bg"] = decision.get("min_uam_pred")
+                    attrs["eventual_bg"] = decision.get("eventual_bg")
+                    attrs["insulin_required"] = decision.get("insulin_required")
+                    attrs["sensitivity_ratio"] = decision.get("sensitivity_ratio")
+                    attrs["iob"] = decision.get("iob")
+                    attrs["basal_iob"] = decision.get("basaliob")
+                    attrs["requested_rate"] = decision.get("rate")
+                    attrs["requested_duration"] = decision.get("duration")
+                    attrs["smb_amount"] = decision.get("smb")
         if self.key == "average_pred":
             attrs["prediction_series_available"] = list((data.get("decision", {}).get("pred_bgs") or {}).keys())
         if self.key == "aaps_device":
