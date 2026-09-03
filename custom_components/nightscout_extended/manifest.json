@@ -1,13 +1,16 @@
 {
   "domain": "nightscout_extended",
   "name": "Nightscout Extended",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "documentation": "https://github.com/kleinig/nightscout-extended-home-assistant",
   "requirements": [
     "python-socketio[asyncio_client]>=5.11.0,<6"
   ],
-  "codeowners": [],
+  "codeowners": [
+    "@kleinig"
+  ],
   "config_flow": true,
   "iot_class": "cloud_push",
-  "integration_type": "service"
+  "integration_type": "service",
+  "issue_tracker": "https://github.com/kleinig/nightscout-extended-home-assistant/issues"
 }

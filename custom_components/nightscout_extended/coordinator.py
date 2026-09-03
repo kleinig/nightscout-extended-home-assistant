@@ -1502,10 +1502,42 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _text(suggested.get("consoleError")),
             ) if x
         )
-        autosens_ratio = _first_number_from_text(console_text, "Autosens ratio")
+        # AAPS exposes the sensitivity values through two complementary paths:
+        # the OpenAPS/AAPS result JSON and, in some versions, the algorithm
+        # console log. Prefer the structured fields when present and only use
+        # the exact console labels as a compatibility fallback.
+        structured_autosens = _first_num(
+            suggested.get("sensitivityRatio"),
+            enacted.get("sensitivityRatio"),
+            decision.get("sensitivity_ratio"),
+        )
+        autosens_ratio_console = _first_number_from_text(console_text, "Autosens ratio")
+        autosens_ratio = (
+            autosens_ratio_console
+            if autosens_ratio_console is not None
+            else structured_autosens
+        )
+        # sensitivityRatio is the value AAPS places in the algorithm result
+        # and is therefore the best Nightscout representation of the ratio
+        # actually supplied to the algorithm. Keep it separate from the
+        # human-readable Autosens diagnostic above.
+        autosens_in_algorithm = structured_autosens
+
         future_sens = _first_number_from_text(console_text, "Future state sensitivity")
         csf = _first_number_from_text(console_text, "CSF")
-        isf_for_carbs = _first_number_from_text(console_text, "isfMgdlForCarbs")
+
+        # Newer AAPS payloads can carry this as a structured field. The field
+        # name explicitly identifies mg/dL, so it is already canonical mg/dL/U.
+        isf_for_carbs_structured = _first_num(
+            _walk_for_key(suggested, {"isfMgdlForCarbs"}),
+            _walk_for_key(enacted, {"isfMgdlForCarbs"}),
+            _walk_for_key(latest_aaps, {"isfMgdlForCarbs"}),
+        )
+        isf_for_carbs = (
+            isf_for_carbs_structured
+            if isf_for_carbs_structured is not None
+            else _first_number_from_text(console_text, "isfMgdlForCarbs")
+        )
         meal_insulin_req = _first_number_from_text(console_text, "mealInsulinReq")
         max_uam_smb_basal_minutes = _first_number_from_text(console_text, "maxUAMSMBBasalMinutes")
         current_basal = _first_number_from_text(console_text, "current_basal")
@@ -1590,6 +1622,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "uam_duration": uam_duration,
             "carbs_required": carbs_required,
             "autosens_ratio": _percent_ratio(autosens_ratio),
+            "autosens_in_algorithm": _percent_ratio(autosens_in_algorithm),
             "future_state_sensitivity": future_sens,
             "csf": csf,
             "isf_for_carbs": isf_for_carbs,

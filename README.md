@@ -90,7 +90,8 @@ can expose information including:
 -   SMB information.
 -   Meal Assist information.
 -   Carb Impact and UAM information.
--   Autosens information.
+-   AAPS Autosens and Autosens-in-algorithm information.
+-   AAPS ISF for Calculator and Carbs Absorption.
 -   MMTune information.
 -   AAPS delivery status.
 -   Additional Nightscout device/treatment information.
@@ -371,10 +372,31 @@ appropriate.
 
 Examples:
 
--   Autosens Ratio → `%`
+-   AAPS Autosens → `%`
+-   AAPS Autosens in Algorithm → `%`
 -   Sensitivity Ratio → `%`
 -   Dynamic ISF Adjustment → `%`
 -   Temp Basal Percentage → `%`
+-   ISF for Calculator and Carbs Absorption → the configured ISF unit
+
+### AAPS sensitivity diagnostics
+
+Nightscout Extended exposes the AAPS sensitivity values when Nightscout
+contains them. The integration prefers the structured AAPS/OpenAPS result
+fields and uses the exact AAPS console labels only as a compatibility fallback.
+
+- **AAPS Autosens** comes from the AAPS `Autosens ratio` diagnostic when
+  available, otherwise the structured `sensitivityRatio` value.
+- **AAPS Autosens in Algorithm** comes from the structured
+  `sensitivityRatio` value supplied in the AAPS/OpenAPS algorithm result.
+- **ISF for Calculator and Carbs Absorption** comes from the structured
+  `isfMgdlForCarbs` field when present, otherwise the exact
+  `isfMgdlForCarbs` console diagnostic.
+
+The `isfMgdlForCarbs` field is explicitly expressed by AAPS in mg/dL/U and is
+converted to the integration's selected ISF display unit. These are Diagnostic
+entities because they describe AAPS-specific algorithm state rather than a
+generic Nightscout profile setting.
 
 Insulin-to-carbohydrate ratio remains expressed as:
 
