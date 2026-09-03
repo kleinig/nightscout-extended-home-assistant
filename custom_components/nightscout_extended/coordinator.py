@@ -137,6 +137,19 @@ def _parse_dt(value: Any, tzinfo=timezone.utc) -> datetime | None:
 
 # Nightscout entries and AAPS OpenAPS BG values are mg/dL in the supplied API.
 # Do NOT use a magnitude heuristic here: deltas can legitimately be -2, +2 etc.
+def _stored_profile_tz(data: dict[str, Any] | None) -> Any:
+    """Return the Nightscout profile timezone stored in coordinator data."""
+    if not isinstance(data, dict):
+        return timezone.utc
+    name = data.get("profile_timezone")
+    if name:
+        try:
+            return ZoneInfo(str(name))
+        except Exception:
+            pass
+    return data.get("profile_tz") or timezone.utc
+
+
 def _profile_timezone_name(profile_tz: Any) -> str:
     """Return a stable IANA timezone name for diagnostic exposure."""
     return getattr(profile_tz, "key", None) or str(profile_tz) or "UTC"
@@ -433,7 +446,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not isinstance(self.data, dict):
             return
 
-        profile_tz = self.data.get("profile_tz") or timezone.utc
+        profile_tz = _stored_profile_tz(self.data)
         self.data["socket_last_update"] = _parse_dt(payload.get("lastUpdated"), profile_tz)
         self.data["socket_last_event"] = "dataUpdate"
 
@@ -516,8 +529,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "suggested_min_pred_bg": _mgdl(suggested.get("minPredBG")),
                 "suggested_rate": _num(suggested.get("rate")),
                 "suggested_duration": _num(suggested.get("duration")),
-                "suggested_deliver_at": _parse_dt(suggested.get("deliverAt")),
-                "suggested_timestamp": _parse_dt(suggested.get("timestamp")),
+                "suggested_deliver_at": _parse_dt(suggested.get("deliverAt"), profile_tz),
+                "suggested_timestamp": _parse_dt(suggested.get("timestamp"), profile_tz),
                 "suggested_insulin_required": _num(suggested.get("insulinReq")),
                 "suggested_target_bg": _mgdl(suggested.get("targetBG")),
                 "suggested_sensitivity_ratio": _num(suggested.get("sensitivityRatio")),
@@ -526,6 +539,7 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "suggested_running_dynamic_isf": suggested.get("runningDynamicIsf"),
                 "suggested_reservoir": _num(suggested.get("reservoir")),
                 "suggested_smb": _num(suggested.get("smb")),
+            "suggested_units": suggested_units,
                 "suggested_received": suggested.get("received", suggested.get("recieved")),
                 "suggested_pred_bgs": suggested.get("predBGs") if isinstance(suggested.get("predBGs"), dict) else {},
                 "enacted_bg": _mgdl(enacted.get("bg")),
@@ -535,11 +549,13 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "enacted_min_pred_bg": _mgdl(enacted.get("minPredBG")),
                 "enacted_rate": _num(enacted.get("rate")),
                 "enacted_duration": _num(enacted.get("duration")),
-                "enacted_deliver_at": _parse_dt(enacted.get("deliverAt")),
-                "enacted_timestamp": _parse_dt(enacted.get("timestamp")),
+                "enacted_deliver_at": _parse_dt(enacted.get("deliverAt"), profile_tz),
+                "enacted_timestamp": _parse_dt(enacted.get("timestamp"), profile_tz),
                 "enacted_insulin_required": _num(enacted.get("insulinReq")),
                 "enacted_target_bg": _mgdl(enacted.get("targetBG")),
                 "enacted_sensitivity_ratio": _num(enacted.get("sensitivityRatio")),
+            "enacted_units": enacted_units,
+            "enacted_meal_assist": enacted.get("mealAssist"),
                 "enacted_variable_sens": _num(enacted.get("variable_sens")),
                 "enacted_received": enacted.get("received", enacted.get("recieved")),
                 "enacted_pred_bgs": enacted.get("predBGs") if isinstance(enacted.get("predBGs"), dict) else {},
@@ -1253,6 +1269,26 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for kind, event in rest_changes.items():
             self._change_events[kind] = event
 
+        # Additional raw/diagnostic values. Keep these as None when AAPS/Nightscout\n        # does not supply them; do not infer substitutes for raw fields.\n        def _first_text(*values):\n            for value in values:\n                if value is not None and str(value).strip():\n                    return _text(value)\n            return None\n\n        def _first_num(*values):\n            for value in values:\n                parsed = _num(value)\n                if parsed is not None:\n                    return parsed\n            return None\n\n        # AAPS console diagnostics. AAPS writes these labels into consoleLog/\n        # consoleError in some algorithm states. They are deliberately parsed\n        # only when the exact label is present.\n        console_text = "\\n".join(\n            x for x in (\n                _text(latest_aaps.get("consoleLog")),\n                _text(latest_aaps.get("consoleError")),\n                _text(suggested.get("consoleLog")),\n                _text(suggested.get("consoleError")),\n            ) if x\n        )\n        autosens_ratio = _first_number_from_text(console_text, "Autosens ratio")\n        future_sens = _first_number_from_text(console_text, "Future state sensitivity")\n        csf = _first_number_from_text(console_text, "CSF")\n        isf_for_carbs = _first_number_from_text(console_text, "isfMgdlForCarbs")\n        meal_insulin_req = _first_number_from_text(console_text, "mealInsulinReq")\n        max_uam_smb_basal_minutes = _first_number_from_text(console_text, "maxUAMSMBBasalMinutes")\n        current_basal = _first_number_from_text(console_text, "current_basal")\n        last_bolus_age = _first_number_from_text(console_text, "last bolus")\n        zero_temp_rate = None\n        match_zero_rate = re.search(r"zeroTempDuration\\s+(-?\\d+(?:\\.\\d+)?)\\s+zeroTempEffect\\s*:\\s*(-?\\d+(?:\\.\\d+)?)", console_text, re.I)\n        if match_zero_rate:\n            zero_temp_rate = _first_number_from_text(console_text, "temp needed")\n        carbs_required = self.data.get("carbs_required") if self.data else None\n        if carbs_required is None:\n            carbs_required = _first_number_from_text(console_text, "carbsReq")\n        meal_assist = _first_text(suggested.get("mealAssist"), enacted.get("mealAssist"))\n        suggested_units = _first_num(suggested.get("units"))\n        enacted_units = _first_num(enacted.get("units"))\n        # Search recent AAPS records independently for uploader data so an\n        # OpenAPS record without uploader data does not hide a valid value.\n        uploader_battery = None\n        uploader_battery_voltage = None\n        charging_value = None\n        for record in sorted(aaps_records, key=record_sort_key, reverse=True):\n            up = record.get("uploader") if isinstance(record.get("uploader"), dict) else {}\n            if uploader_battery is None:\n                uploader_battery = _num(up.get("battery"))\n            if uploader_battery_voltage is None:\n                uploader_battery_voltage = _num(up.get("batteryVoltage"))\n            if charging_value is None and record.get("isCharging") is not None:\n                charging_value = bool(record.get("isCharging"))\n            if uploader_battery is not None and uploader_battery_voltage is not None and charging_value is not None:\n                break\n\n        # Nightscout/OpenAPS mmtune diagnostic data. Keep the raw structure in
+        # attributes and expose the common summary values when available.
+        mmtune = latest_aaps.get("mmtune") if isinstance(latest_aaps.get("mmtune"), dict) else {}
+        mmtune_frequency = _first_num(mmtune.get("setFreq"), mmtune.get("frequency"))
+        mmtune_timestamp = _parse_dt(mmtune.get("timestamp"), profile_tz)
+        mmtune_best_rssi = None
+        scan_details = mmtune.get("scanDetails")
+        if isinstance(scan_details, dict):
+            for details in scan_details.values():
+                if isinstance(details, dict):
+                    rssi = _num(details.get("rssi"))
+                    if rssi is not None and (mmtune_best_rssi is None or rssi > mmtune_best_rssi):
+                        mmtune_best_rssi = rssi
+        elif isinstance(scan_details, list):
+            for details in scan_details:
+                if isinstance(details, dict):
+                    rssi = _num(details.get("rssi"))
+                    if rssi is not None and (mmtune_best_rssi is None or rssi > mmtune_best_rssi):
+                        mmtune_best_rssi = rssi
+
         data = {
             "status": status,
             "devicestatus": latest_aaps,
@@ -1292,6 +1328,18 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "uam_impact": uam_impact,
             "uam_duration": uam_duration,
             "carbs_required": carbs_required,
+            "autosens_ratio": autosens_ratio,
+            "future_state_sensitivity": future_sens,
+            "csf": csf,
+            "isf_for_carbs": isf_for_carbs,
+            "meal_insulin_required": meal_insulin_req,
+            "max_uam_smb_basal_minutes": max_uam_smb_basal_minutes,
+            "aaps_current_basal": current_basal,
+            "last_bolus_age": last_bolus_age,
+            "zero_temp_rate": zero_temp_rate,
+            "meal_assist": meal_assist,
+            "suggested_units": suggested_units,
+            "enacted_units": enacted_units,
             "zero_temp_duration": zero_temp_duration,
             "zero_temp_effect": zero_temp_effect,
 
@@ -1304,12 +1352,13 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "aaps_version": _text(aaps_version),
             "aaps_device": _text(latest_aaps.get("device")),
             "uploader_battery": uploader_battery,
-            "uploader_battery_voltage": _num(latest_aaps.get("uploader", {}).get("batteryVoltage")) if isinstance(latest_aaps.get("uploader"), dict) else None,
-            "charging": charging,
+            "uploader_battery_voltage": uploader_battery_voltage,
+            "charging": charging_value if charging_value is not None else charging,
 
             # Active Nightscout profile.
             "profile_name": default_profile,
             "profile_timezone": _profile_timezone_name(profile_tz),
+            "profile_tz": profile_tz,
             "profile_sens": profile_sens,
             "dia": dia,
             "carb_ratio": carb_ratio,
@@ -1321,6 +1370,9 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "pump_connected": bool(pump),
             "pump_clock": pump_clock,
             "pump_firmware": _text(pump_ext.get("Version")),
+            "pump_manufacturer": _text(pump.get("manufacturer") or pump.get("Manufacturer")),
+            "pump_model": _text(pump.get("model") or pump.get("Model")),
+            "pump_device": _text(pump.get("device") or pump.get("Device")),
             "pump_active_profile": _text(pump_ext.get("ActiveProfile")),
             "pump_battery_status": _text(pump.get("battery", {}).get("status")) if isinstance(pump.get("battery"), dict) else None,
             "pump_battery_voltage": _num(pump.get("battery", {}).get("voltage")) if isinstance(pump.get("battery"), dict) else None,
@@ -1344,8 +1396,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "suggested_min_pred_bg": _mgdl(suggested.get("minPredBG")),
             "suggested_rate": _num(suggested.get("rate")),
             "suggested_duration": _num(suggested.get("duration")),
-            "suggested_deliver_at": _parse_dt(suggested.get("deliverAt")),
-            "suggested_timestamp": _parse_dt(suggested.get("timestamp")),
+            "suggested_deliver_at": _parse_dt(suggested.get("deliverAt"), profile_tz),
+            "suggested_timestamp": _parse_dt(suggested.get("timestamp"), profile_tz),
             "suggested_insulin_required": _num(suggested.get("insulinReq")),
             "suggested_target_bg": _mgdl(suggested.get("targetBG")),
             "suggested_sensitivity_ratio": _num(suggested.get("sensitivityRatio")),
@@ -1354,6 +1406,8 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "suggested_running_dynamic_isf": suggested.get("runningDynamicIsf"),
             "suggested_reservoir": _num(suggested.get("reservoir")),
             "suggested_smb": _num(suggested.get("smb")),
+            "suggested_units": suggested_units,
+            "suggested_meal_assist": suggested.get("mealAssist"),
             "suggested_received": suggested.get("received", suggested.get("recieved")),
             "suggested_pred_bgs": suggested.get("predBGs") if isinstance(suggested.get("predBGs"), dict) else {},
             "enacted_bg": _mgdl(enacted.get("bg")),
@@ -1363,11 +1417,13 @@ class NightscoutExtendedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "enacted_min_pred_bg": _mgdl(enacted.get("minPredBG")),
             "enacted_rate": _num(enacted.get("rate")),
             "enacted_duration": _num(enacted.get("duration")),
-            "enacted_deliver_at": _parse_dt(enacted.get("deliverAt")),
-            "enacted_timestamp": _parse_dt(enacted.get("timestamp")),
+            "enacted_deliver_at": _parse_dt(enacted.get("deliverAt"), profile_tz),
+            "enacted_timestamp": _parse_dt(enacted.get("timestamp"), profile_tz),
             "enacted_insulin_required": _num(enacted.get("insulinReq")),
             "enacted_target_bg": _mgdl(enacted.get("targetBG")),
             "enacted_sensitivity_ratio": _num(enacted.get("sensitivityRatio")),
+            "enacted_units": enacted_units,
+            "enacted_meal_assist": enacted.get("mealAssist"),
             "enacted_variable_sens": _num(enacted.get("variable_sens")),
             "enacted_received": enacted.get("received", enacted.get("recieved")),
             "enacted_pred_bgs": enacted.get("predBGs") if isinstance(enacted.get("predBGs"), dict) else {},

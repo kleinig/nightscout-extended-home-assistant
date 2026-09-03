@@ -84,6 +84,8 @@ SENSORS = [
     ("suggested_algorithm", "AAPS Suggested Algorithm", None, None, EntityCategory.DIAGNOSTIC),
     ("suggested_reservoir", "AAPS Suggested Reservoir", "U", None, EntityCategory.DIAGNOSTIC),
     ("suggested_smb", "AAPS Suggested SMB", "U", None, EntityCategory.DIAGNOSTIC),
+    ("suggested_units", "AAPS Suggested Units", "U", None, EntityCategory.DIAGNOSTIC),
+    ("suggested_meal_assist", "AAPS Suggested Meal Assist", None, None, EntityCategory.DIAGNOSTIC),
     ("enacted_bg", "AAPS Enacted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("enacted_snooze_bg", "AAPS Enacted Snooze BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("enacted_tick", "AAPS Enacted Tick", None, None, EntityCategory.DIAGNOSTIC),
@@ -96,6 +98,8 @@ SENSORS = [
     ("enacted_insulin_required", "AAPS Enacted Insulin Required", "U", None, EntityCategory.DIAGNOSTIC),
     ("enacted_target_bg", "AAPS Enacted Target BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("enacted_sensitivity_ratio", "AAPS Enacted Sensitivity Ratio", None, None, EntityCategory.DIAGNOSTIC),
+    ("enacted_units", "AAPS Enacted Units", "U", None, EntityCategory.DIAGNOSTIC),
+    ("enacted_meal_assist", "AAPS Enacted Meal Assist", None, None, EntityCategory.DIAGNOSTIC),
 
     # Predictions: native AAPS minima plus useful derived series statistics
     ("average_pred", "Average Predicted BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
@@ -111,6 +115,19 @@ SENSORS = [
     ("uam_duration", "UAM Duration", "min", None, EntityCategory.DIAGNOSTIC),
     ("zero_temp_duration", "Zero Temp Duration", "min", None, EntityCategory.DIAGNOSTIC),
     ("zero_temp_effect", "Zero Temp Effect", None, None, EntityCategory.DIAGNOSTIC),
+    ("carbs_required", "Carbs Required", "g", None, EntityCategory.DIAGNOSTIC),
+    ("autosens_ratio", "Autosens Ratio", None, None, EntityCategory.DIAGNOSTIC),
+    ("future_state_sensitivity", "Future State Sensitivity", None, None, EntityCategory.DIAGNOSTIC),
+    ("csf", "Carb Sensitivity Factor", None, None, EntityCategory.DIAGNOSTIC),
+    ("isf_for_carbs", "ISF for Carbs", None, None, EntityCategory.DIAGNOSTIC),
+    ("meal_insulin_required", "Meal Insulin Required", "U", None, EntityCategory.DIAGNOSTIC),
+    ("max_uam_smb_basal_minutes", "Maximum UAM SMB Basal Minutes", "min", None, EntityCategory.DIAGNOSTIC),
+    ("aaps_current_basal", "AAPS Current Basal", "U/h", None, EntityCategory.DIAGNOSTIC),
+    ("last_bolus_age", "AAPS Last Bolus Age", "min", None, EntityCategory.DIAGNOSTIC),
+    ("zero_temp_rate", "Zero Temp Required Rate", "U/h", None, EntityCategory.DIAGNOSTIC),
+    ("mmtune_frequency", "AAPS MMTune Frequency", None, None, EntityCategory.DIAGNOSTIC),
+    ("mmtune_best_rssi", "AAPS MMTune Best RSSI", "dBm", None, EntityCategory.DIAGNOSTIC),
+    ("mmtune_timestamp", "AAPS MMTune Timestamp", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
 
     # Profile/configuration
     ("profile_name", "Active Profile", None, None, None),
@@ -144,6 +161,9 @@ SENSORS = [
     ("pump_battery_voltage", "Pump Battery Voltage", "mV", None, EntityCategory.DIAGNOSTIC),
     ("pump_status_timestamp", "Pump Status Time", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("pump_firmware", "Pump Firmware", None, None, EntityCategory.DIAGNOSTIC),
+    ("pump_manufacturer", "Pump Manufacturer", None, None, EntityCategory.DIAGNOSTIC),
+    ("pump_model", "Pump Model", None, None, EntityCategory.DIAGNOSTIC),
+    ("pump_device", "Pump Device", None, None, EntityCategory.DIAGNOSTIC),
     ("pump_active_profile", "Pump Active Profile", None, None, EntityCategory.DIAGNOSTIC),
     ("pump_clock", "Pump Clock", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("base_basal", "Base Basal Rate", "U/h", None, None),
@@ -265,6 +285,10 @@ class NightscoutExtendedSensor(SensorEntity):
             attrs["prediction_series_available"] = list((decision.get("pred_bgs") or {}).keys())
             attrs["suggested_prediction_series"] = list((data.get("suggested_pred_bgs") or {}).keys())
             attrs["enacted_prediction_series"] = list((data.get("enacted_pred_bgs") or {}).keys())
+            attrs["suggested_pred_bgs"] = data.get("suggested_pred_bgs") or {}
+            attrs["enacted_pred_bgs"] = data.get("enacted_pred_bgs") or {}
+        if self.key in {"mmtune_frequency", "mmtune_best_rssi", "mmtune_timestamp"}:
+            attrs["mmtune"] = data.get("mmtune") or {}
         if self.key == "aaps_device":
             attrs["last_update"] = data.get("entry_time")
         if self.key in TIMESTAMP_KEYS:
