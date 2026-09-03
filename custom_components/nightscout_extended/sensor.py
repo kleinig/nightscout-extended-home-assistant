@@ -51,7 +51,6 @@ SENSORS = [
     ("snooze_bg", "Snooze BG", None, SensorDeviceClass.BLOOD_GLUCOSE_CONCENTRATION, EntityCategory.DIAGNOSTIC),
     ("aaps_tick", "AAPS Tick", None, None, EntityCategory.DIAGNOSTIC),
     ("aaps_temp", "AAPS Temp Type", None, None, EntityCategory.DIAGNOSTIC),
-    ("aaps_reservoir", "AAPS Suggested Reservoir", "U", None, EntityCategory.DIAGNOSTIC),
     ("aaps_delivery_time", "AAPS Delivery Time", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("aaps_suggestion_time", "AAPS Suggestion Time", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
 
@@ -115,6 +114,7 @@ SENSORS = [
 
     # Profile/configuration
     ("profile_name", "Active Profile", None, None, None),
+    ("profile_timezone", "Nightscout Profile Timezone", None, None, EntityCategory.DIAGNOSTIC),
     ("current_isf", "Current ISF", None, None, None),
     ("profile_sens", "Profile Sensitivity", None, None, EntityCategory.DIAGNOSTIC),
     ("carb_ratio", "Carb Ratio", "g/U", None, None),
@@ -141,7 +141,7 @@ SENSORS = [
     ("pump_battery", "Pump Battery", "%", None, None),
     ("pump_status", "Pump Status", None, None, None),
     ("pump_battery_status", "Pump Battery Status", None, None, EntityCategory.DIAGNOSTIC),
-    ("pump_battery_voltage", "Pump Battery Voltage", "V", None, EntityCategory.DIAGNOSTIC),
+    ("pump_battery_voltage", "Pump Battery Voltage", "mV", None, EntityCategory.DIAGNOSTIC),
     ("pump_status_timestamp", "Pump Status Time", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("pump_firmware", "Pump Firmware", None, None, EntityCategory.DIAGNOSTIC),
     ("pump_active_profile", "Pump Active Profile", None, None, EntityCategory.DIAGNOSTIC),
@@ -174,7 +174,7 @@ SENSORS = [
 ]
 
 GLUCOSE_KEYS = {
-    "bg", "eventual_bg", "target_bg", "snooze_bg", "suggested_bg", "suggested_snooze_bg",
+    "bg", "delta", "eventual_bg", "target_bg", "snooze_bg", "suggested_bg", "suggested_snooze_bg",
     "suggested_min_pred_bg", "suggested_target_bg", "enacted_bg", "enacted_snooze_bg",
     "enacted_min_pred_bg", "enacted_target_bg", "average_pred", "minimum_pred", "min_iob_pred",
     "min_guard", "min_uam", "naive_eventual", "bg_undershoot", "average_bg", "bg_sd",
@@ -267,6 +267,8 @@ class NightscoutExtendedSensor(SensorEntity):
             attrs["enacted_prediction_series"] = list((data.get("enacted_pred_bgs") or {}).keys())
         if self.key == "aaps_device":
             attrs["last_update"] = data.get("entry_time")
+        if self.key in TIMESTAMP_KEYS:
+            attrs["timezone"] = data.get("profile_timezone")
         if self.key in {"pump_status", "pump_battery_status"}:
             attrs.update({
                 "bolusing": data.get("pump_bolusing"),
