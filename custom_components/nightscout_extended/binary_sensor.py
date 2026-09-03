@@ -74,13 +74,13 @@ def _is_on(data, key):
     if key == "glucose_high":
         return bg is not None and data.get("high_mark") is not None and bg > data["high_mark"]
     if key == "glucose_rising":
-        return direction in {"singleup", "doubleup", "fortyfiveup"} or (delta is not None and delta > 0)
+        return direction in {"singleup", "doubleup", "fortyfiveup"}
     if key == "glucose_falling":
-        return direction in {"singledown", "doubledown", "fortyfivedown"} or (delta is not None and delta < 0)
+        return direction in {"singledown", "doubledown", "fortyfivedown"}
     if key == "glucose_rapid_rising":
-        return direction in {"doubleup"} or (delta is not None and delta >= 3)
+        return direction in {"doubleup"}
     if key == "glucose_rapid_falling":
-        return direction in {"doubledown"} or (delta is not None and delta <= -3)
+        return direction in {"doubledown"}
     if key == "closed_loop":
         return _bool(data.get("closed_loop")) or False
     if key == "reservoir_warning_active":
