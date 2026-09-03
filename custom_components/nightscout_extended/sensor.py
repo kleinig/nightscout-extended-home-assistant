@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import math
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -22,10 +23,10 @@ DEVICE = DeviceInfo(
 # selection rather than creating duplicate mg/dL and mmol/L entities.
 SENSORS = [
     # Device/change ages
-    ("cannula_age", "Cannula Age", "h", None, EntityCategory.DIAGNOSTIC),
-    ("sensor_age", "CGM Sensor Age", "h", None, EntityCategory.DIAGNOSTIC),
-    ("insulin_age", "Insulin Cartridge Age", "h", None, EntityCategory.DIAGNOSTIC),
-    ("battery_age", "Pump Battery Age", "h", None, EntityCategory.DIAGNOSTIC),
+    ("cannula_age", "Cannula Age", None, None, EntityCategory.DIAGNOSTIC),
+    ("sensor_age", "CGM Sensor Age", None, None, EntityCategory.DIAGNOSTIC),
+    ("insulin_age", "Insulin Cartridge Age", None, None, EntityCategory.DIAGNOSTIC),
+    ("battery_age", "Pump Battery Age", None, None, EntityCategory.DIAGNOSTIC),
     ("last_cannula_change", "Last Cannula Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("last_sensor_change", "Last Sensor Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("last_insulin_change", "Last Insulin Change", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
@@ -168,6 +169,7 @@ SENSORS = [
     ("pump_clock", "Pump Clock", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("base_basal", "Base Basal Rate", "U/h", None, None),
     ("temp_basal_rate", "Temp Basal Rate", "U/h", None, None),
+    ("temp_basal_percentage", "Temp Basal Percentage", "%", None, None),
     ("temp_basal_remaining", "Temp Basal Remaining", "min", None, None),
     ("temp_basal_start", "Temp Basal Start", None, SensorDeviceClass.TIMESTAMP, EntityCategory.DIAGNOSTIC),
     ("last_bolus_amount", "Last Bolus Amount", "U", None, None),
@@ -213,8 +215,23 @@ def _number(value: Any) -> float | None:
         return None
 
 
+def _format_age_hours(value: Any) -> str | None:
+    hours = _number(value)
+    if hours is None:
+        return None
+    total_minutes = max(0, int(round(hours * 60)))
+    whole_hours, minutes = divmod(total_minutes, 60)
+    if whole_hours and minutes:
+        return f"{whole_hours}h {minutes}m"
+    if whole_hours:
+        return f"{whole_hours}h"
+    return f"{minutes}m"
+
+
 def _value(data: dict[str, Any], key: str) -> Any:
     value = data.get(key)
+    if key in {"cannula_age", "sensor_age", "insulin_age", "battery_age"}:
+        return _format_age_hours(value)
     glucose_unit = data.get("glucose_unit", "mmol/L")
     isf_unit = data.get("isf_unit", "mmol/L/U")
 
@@ -226,6 +243,13 @@ def _value(data: dict[str, Any], key: str) -> Any:
         value = data.get("variable_sens")
     elif key == "average_bg":
         value = data.get("average_bg")
+    elif key == "temp_basal_percentage":
+        temp_rate = _number(data.get("temp_basal_rate"))
+        base_rate = _number(data.get("base_basal"))
+        if temp_rate is None or base_rate is None or base_rate <= 0:
+            return None
+        # Display in 5% increments by default (e.g. 10%, 50%, 100%, 150%).
+        return float(math.floor((temp_rate / base_rate * 100.0) / 5.0 + 0.5) * 5)
 
     if key in GLUCOSE_KEYS:
         value = _number(value)
