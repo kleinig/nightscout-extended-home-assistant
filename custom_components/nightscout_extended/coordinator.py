@@ -7,6 +7,7 @@ import re
 from typing import Any
 import json
 import hashlib
+import logging
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -15,6 +16,8 @@ import socketio
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+_LOGGER = logging.getLogger(__name__)
 
 from .const import (
     CONF_API_KEY,

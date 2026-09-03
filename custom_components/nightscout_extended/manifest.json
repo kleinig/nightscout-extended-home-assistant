@@ -1,7 +1,7 @@
 {
   "domain": "nightscout_extended",
   "name": "Nightscout Extended",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "documentation": "https://github.com/example/nightscout-extended",
   "requirements": [
     "python-socketio[asyncio_client]>=5.11.0,<6"
