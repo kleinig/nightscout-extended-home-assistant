@@ -406,6 +406,20 @@ g/U
 
 ------------------------------------------------------------------------
 
+# Dashboard card
+
+To display the current reading on a dashboard, [SugarTV Card](https://github.com/wiltodelta/homeassistant-sugartv-card) (HACS) works with Nightscout Extended out of the box. Point it at `Blood Glucose`, and it picks up `BG Direction` automatically and can optionally show `Insulin on Board`:
+
+```yaml
+type: custom:sugartv-card
+glucose_value: sensor.nightscout_extended_blood_glucose
+insulin_value: sensor.nightscout_extended_insulin_on_board # optional
+```
+
+![SugarTV Card in a wide and a tall dashboard slot](https://raw.githubusercontent.com/wiltodelta/homeassistant-sugartv-card/v0.22.0/sugartv-card-layouts.png)
+
+------------------------------------------------------------------------
+
 # Temporary basal handling
 
 Nightscout Extended treats temporary basal information as a
